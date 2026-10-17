@@ -262,7 +262,7 @@ function ModelStep({
               className={cn(
                 "rounded-lg border p-4 text-left transition-all duration-150",
                 config.problemType === pt
-                  ? "border-primary bg-primary/[0.03]"
+                  ? "border-primary bg-primary/3"
                   : "border-border-subtle hover:border-border"
               )}
             >
@@ -285,14 +285,14 @@ function ModelStep({
               className={cn(
                 "rounded-lg border p-3.5 text-left transition-all duration-150",
                 config.algorithm === alg.value
-                  ? "border-primary bg-primary/[0.03]"
+                  ? "border-primary bg-primary/3"
                   : "border-border-subtle hover:border-border"
               )}
             >
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-medium text">{alg.label}</p>
                 <span className={cn(
-                  "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  "rounded-sm px-1.5 py-0.5 text-[10px] font-medium",
                   alg.speed === "Fast" ? "bg-success-muted text-success" :
                     alg.speed === "Instant" ? "bg-info-muted text-info" :
                       alg.speed === "Slow" ? "bg-warning-muted text-warning" :
@@ -345,7 +345,7 @@ function DatasetStep({
               className={cn(
                 "flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-150",
                 config.datasetId === ds.id
-                  ? "border-primary bg-primary/[0.03]"
+                  ? "border-primary bg-primary/3"
                   : "border-border-subtle hover:border-border"
               )}
             >
@@ -361,7 +361,7 @@ function DatasetStep({
                   <p className="text-sm font-mono font-medium">{ds.qualityScore}%</p>
                 </div>
                 <span className={cn(
-                  "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  "rounded-sm px-1.5 py-0.5 text-[10px] font-medium",
                   ds.freshness === "live" ? "bg-success-muted text-success" :
                     ds.freshness === "daily" ? "bg-info-muted text-info" :
                       "bg-surface-3 text-text-tertiary"
@@ -451,7 +451,7 @@ function ParametersStep({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-text-secondary">Learning Rate</label>
-              <span className="rounded bg-surface-2 px-2 py-0.5 font-mono text-xs font-medium">{config.learningRate.toFixed(4)}</span>
+              <span className="rounded-sm bg-surface-2 px-2 py-0.5 font-mono text-xs font-medium">{config.learningRate.toFixed(4)}</span>
             </div>
             <input type="range" min={0.0001} max={1} step={0.0001} value={config.learningRate}
               onChange={(e) => setConfig({ ...config, learningRate: parseFloat(e.target.value) })}
@@ -462,7 +462,7 @@ function ParametersStep({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-text-secondary">Epochs</label>
-              <span className="rounded bg-surface-2 px-2 py-0.5 font-mono text-xs font-medium">{config.epochs}</span>
+              <span className="rounded-sm bg-surface-2 px-2 py-0.5 font-mono text-xs font-medium">{config.epochs}</span>
             </div>
             <input type="range" min={5} max={500} step={5} value={config.epochs}
               onChange={(e) => setConfig({ ...config, epochs: parseInt(e.target.value) })}
@@ -505,7 +505,7 @@ function ParametersStep({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-text-secondary">Weight Decay</label>
-              <span className="rounded bg-surface-2 px-2 py-0.5 font-mono text-xs">{config.weightDecay}</span>
+              <span className="rounded-sm bg-surface-2 px-2 py-0.5 font-mono text-xs">{config.weightDecay}</span>
             </div>
             <input type="range" min={0} max={0.5} step={0.01} value={config.weightDecay}
               onChange={(e) => setConfig({ ...config, weightDecay: parseFloat(e.target.value) })}
@@ -542,7 +542,7 @@ function ParametersStep({
                 className={cn("relative flex h-7 w-12 items-center rounded-full px-0.5 transition-colors duration-150",
                   config.earlyStopping ? "bg-primary" : "bg-surface-3"
                 )}>
-                <span className={cn("h-6 w-6 rounded-full bg-white shadow transition-transform duration-150",
+                <span className={cn("h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-150",
                   config.earlyStopping ? "translate-x-5" : "translate-x-0"
                 )} />
               </button>

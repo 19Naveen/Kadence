@@ -119,7 +119,7 @@ export function QueryStudioPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79 8-4" />
             </svg>
             <select
-              className="bg-transparent border-none outline-none appearance-none pr-5 cursor-pointer text font-medium"
+              className="bg-transparent border-none outline-hidden appearance-none pr-5 cursor-pointer text font-medium"
               value={selectedDatasetId}
               onChange={(e) => setSelectedDatasetId(e.target.value)}
               disabled={datasetsLoading || datasets.length === 0}
@@ -137,7 +137,7 @@ export function QueryStudioPage() {
             {messages.map((msg) => (
               <div key={msg.id} className={cn("flex flex-col gap-2", msg.role === "user" ? "items-end" : "items-start")}>
                 <div className={cn(
-                  "max-w-[90%] rounded-2xl p-5 text-sm leading-relaxed shadow-sm",
+                  "max-w-[90%] rounded-2xl p-5 text-sm leading-relaxed shadow-xs",
                   msg.role === "user" ? "bg-primary text-white font-mono" : "bg-surface border border-border text w-full"
                 )}>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -166,7 +166,7 @@ export function QueryStudioPage() {
               <div className="flex flex-wrap gap-2 justify-center">
                 {SQL_SUGGESTIONS.map((s, i) => (
                   <button key={i} onClick={() => setInput(s)}
-                    className="px-4 py-2 rounded-full border border-border bg-white/60 backdrop-blur-md text-xs font-mono hover:border-primary hover:text-primary transition-all shadow-sm">
+                    className="px-4 py-2 rounded-full border border-border bg-white/60 backdrop-blur-md text-xs font-mono hover:border-primary hover:text-primary transition-all shadow-xs">
                     {s}
                   </button>
                 ))}
@@ -180,7 +180,7 @@ export function QueryStudioPage() {
                   type="text"
                   autoFocus
                   placeholder={selectedDatasetId ? "SELECT * FROM dataset LIMIT 20" : "Select a dataset to begin…"}
-                  className="flex-1 bg-transparent border-none outline-none text-sm font-mono py-5 placeholder:text-text-tertiary"
+                  className="flex-1 bg-transparent border-none outline-hidden text-sm font-mono py-5 placeholder:text-text-tertiary"
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleSend(input)}

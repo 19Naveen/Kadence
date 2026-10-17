@@ -164,7 +164,7 @@ export function EDADashboardsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79 8-4" />
               </svg>
               <select
-                className="bg-transparent border-none outline-none appearance-none pr-5 cursor-pointer text font-medium w-full"
+                className="bg-transparent border-none outline-hidden appearance-none pr-5 cursor-pointer text font-medium w-full"
                 value={selectedDatasetId}
                 onChange={(e) => setSelectedDatasetId(e.target.value)}
                 disabled={datasetsLoading || datasets.length === 0}
@@ -193,7 +193,7 @@ export function EDADashboardsPage() {
         )}
 
         {isAdding && (
-          <div className="mb-8 bg-white border border-subtle rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <div className="mb-8 bg-white border border-subtle rounded-xl p-5 shadow-xs animate-in fade-in slide-in-from-top-2">
             <div className="flex justify-between items-center mb-4 border-b border-subtle pb-3">
               <h3 className="font-semibold">Configure New Chart</h3>
               <button onClick={() => setIsAdding(false)} className="text-secondary hover:text-black">
@@ -246,7 +246,7 @@ export function EDADashboardsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {widgets.map(widget => (
-            <div key={widget.id} className="bg-white border border-subtle rounded-xl shadow-sm hover:shadow-md transition-shadow group flex flex-col">
+            <div key={widget.id} className="bg-white border border-subtle rounded-xl shadow-xs hover:shadow-md transition-shadow group flex flex-col">
               <div className="flex justify-between items-center p-4 border-b border-subtle">
                 <div>
                   <h3 className="font-semibold text-sm">{widget.title}</h3>

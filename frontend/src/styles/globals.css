@@ -1,7 +1,146 @@
-@import "./tokens.css";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import './tokens.css' layer(base);
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: hsl(var(--bg));
+  --color-surface: hsl(var(--surface));
+  --color-surface-2: hsl(var(--surface-2));
+  --color-surface-3: hsl(var(--surface-3));
+  --color-text: hsl(var(--text));
+  --color-text-secondary: hsl(var(--text-secondary));
+  --color-text-tertiary: hsl(var(--text-tertiary));
+  --color-border: hsl(var(--border));
+  --color-border-subtle: hsl(var(--border-subtle));
+  --color-primary: hsl(var(--primary));
+  --color-primary-light: hsl(var(--primary-light));
+  --color-primary-muted: hsl(var(--primary-muted));
+  --color-accent: hsl(var(--accent));
+  --color-accent-light: hsl(var(--accent-light));
+  --color-success: hsl(var(--success));
+  --color-success-muted: hsl(var(--success-muted));
+  --color-warning: hsl(var(--warning));
+  --color-warning-muted: hsl(var(--warning-muted));
+  --color-danger: hsl(var(--danger));
+  --color-danger-muted: hsl(var(--danger-muted));
+  --color-info: hsl(var(--info));
+  --color-info-muted: hsl(var(--info-muted));
+
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-heading: Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: JetBrains Mono, Menlo, Monaco, monospace;
+
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 1rem;
+  --text-2xs--letter-spacing: 0.02em;
+
+  --shadow-soft-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.08);
+  --shadow-soft-md: 0 8px 24px -8px rgba(0, 0, 0, 0.06);
+  --shadow-soft-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
+  --shadow-inner-soft: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+
+  --radius-4xl: 2rem;
+
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --animate-fade-in: fadeIn 0.2s ease-out;
+  --animate-slide-up: slideUp 0.2s ease-out;
+  --animate-scale-in: scaleIn 0.15s ease-out;
+
+  @keyframes fadeIn {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes slideUp {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes scaleIn {
+    0% {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility card {
+  @apply bg-surface rounded-lg border border-border-subtle p-5;
+  transition: all 0.15s ease;
+}
+
+@utility card-hover {
+  @apply hover:border-border hover:shadow-xs;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all duration-150;
+  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+}
+
+@utility btn-primary {
+  @apply bg-primary text-white hover:bg-primary-light active:scale-[0.98];
+}
+
+@utility btn-secondary {
+  @apply bg-surface text-text hover:bg-surface-2 border border-border;
+}
+
+@utility btn-ghost {
+  @apply text-text-secondary hover:bg-surface-2 hover:text-text;
+}
+
+@utility btn-danger {
+  @apply bg-danger text-white hover:opacity-90 active:scale-[0.98];
+}
+
+@utility input {
+  @apply w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg transition-all duration-150;
+  @apply placeholder:text-text-tertiary;
+  @apply focus:border-primary focus:ring-1 focus:ring-primary/20;
+}
+
+@utility table-row {
+  @apply border-b border-border-subtle transition-colors hover:bg-surface-2/50;
+}
+
+@utility badge {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+@utility section-label {
+  @apply text-[11px] font-medium uppercase tracking-wider text-text-tertiary;
+}
 
 @layer base {
   * {
@@ -66,55 +205,5 @@
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-text-tertiary;
-  }
-}
-
-@layer components {
-  .card {
-    @apply bg-surface rounded-lg border border-border-subtle p-5;
-    transition: all 0.15s ease;
-  }
-
-  .card-hover {
-    @apply hover:border-border hover:shadow-sm;
-  }
-
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all duration-150;
-    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
-  }
-
-  .btn-primary {
-    @apply bg-primary text-white hover:bg-primary-light active:scale-[0.98];
-  }
-
-  .btn-secondary {
-    @apply bg-surface text-text hover:bg-surface-2 border border-border;
-  }
-
-  .btn-ghost {
-    @apply text-text-secondary hover:bg-surface-2 hover:text-text;
-  }
-
-  .btn-danger {
-    @apply bg-danger text-white hover:opacity-90 active:scale-[0.98];
-  }
-
-  .input {
-    @apply w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg transition-all duration-150;
-    @apply placeholder:text-text-tertiary;
-    @apply focus:border-primary focus:ring-1 focus:ring-primary/20;
-  }
-
-  .table-row {
-    @apply border-b border-border-subtle transition-colors hover:bg-surface-2/50;
-  }
-
-  .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
-  }
-
-  .section-label {
-    @apply text-[11px] font-medium uppercase tracking-wider text-text-tertiary;
   }
 }

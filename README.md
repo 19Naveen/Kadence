@@ -64,7 +64,7 @@ An AI-powered lakehouse data platform that enables users to ingest, transform, q
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite, TypeScript, TailwindCSS, react-router-dom |
+| Frontend | React 19, Vite 8, TypeScript 7, TailwindCSS 4, react-router-dom 7 |
 | Backend API | FastAPI (Python 3.14), Uvicorn |
 | Task Queue | Celery 5 + RabbitMQ |
 | Metadata DB | PostgreSQL 16 (SQLAlchemy 2.1, psycopg 3, Alembic) |
@@ -158,6 +158,7 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
 
 ### 2026-10-18 — Frontend and backend dependency upgrade
 
+- Frontend: React 19, Vite 8, TypeScript 7, Tailwind 4, react-router-dom 7 (see `frontend/README.md`)
 - Backend: all packages refreshed in `uv.lock`; SQLAlchemy 2.1 defaults to psycopg 3, so
   `psycopg2-binary` was replaced by `psycopg[binary]` (see `backend/README.md`)
 

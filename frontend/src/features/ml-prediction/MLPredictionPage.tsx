@@ -108,7 +108,7 @@ function ModelCard({ model, isSelected, onSelect }: {
       onClick={onSelect}
       className={cn(
         "w-full rounded-lg border p-3 text-left transition-all duration-150",
-        isSelected ? "border-primary bg-primary/[0.03]" :
+        isSelected ? "border-primary bg-primary/3" :
           model.status === "training" ? "border-border-subtle opacity-50" :
             "border-border-subtle hover:border-border"
       )}
@@ -117,7 +117,7 @@ function ModelCard({ model, isSelected, onSelect }: {
       <div className="flex items-center justify-between mb-1.5">
         <p className="text-[13px] font-semibold text">{model.name}</p>
         <span className={cn(
-          "rounded px-1.5 py-0.5 text-[10px] font-medium",
+          "rounded-sm px-1.5 py-0.5 text-[10px] font-medium",
           model.status === "ready" ? "bg-success-muted text-success" : "bg-warning-muted text-warning"
         )}>{model.status}</span>
       </div>
@@ -425,9 +425,9 @@ print(response.json())`;
       <div className="space-y-1.5">
         <p className="section-label">Endpoint</p>
         <div className="flex items-center gap-2 rounded-lg border border-border-subtle bg-primary p-3">
-          <span className="rounded bg-success/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">POST</span>
+          <span className="rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">POST</span>
           <code className="flex-1 truncate text-sm font-mono text-white/80">{endpoint}</code>
-          <button onClick={() => handleCopy(endpoint, "ep")} className="rounded p-1.5 hover:bg-white/10 transition-colors">
+          <button onClick={() => handleCopy(endpoint, "ep")} className="rounded-sm p-1.5 hover:bg-white/10 transition-colors">
             <span className="text-xs text-white/50">{copied === "ep" ? "Copied" : "Copy"}</span>
           </button>
         </div>
@@ -542,7 +542,7 @@ export function MLPredictionPage() {
           <div className="card p-3 space-y-2">
             <div className="flex items-center justify-between px-1">
               <p className="section-label">Models</p>
-              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
+              <span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
                 {mockModels.filter((m) => m.status === "ready").length} ready
               </span>
             </div>
@@ -576,7 +576,7 @@ export function MLPredictionPage() {
                 <p className="section-label mb-1.5">Features</p>
                 <div className="flex flex-wrap gap-1">
                   {selectedModel.features.map((f) => (
-                    <span key={f} className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">{f}</span>
+                    <span key={f} className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">{f}</span>
                   ))}
                 </div>
               </div>
@@ -592,7 +592,7 @@ export function MLPredictionPage() {
                 {TABS.map((tab) => (
                   <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                     className={cn("flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all",
-                      activeTab === tab.key ? "bg-surface text-text shadow-sm" : "text-text-tertiary hover:text-text-secondary"
+                      activeTab === tab.key ? "bg-surface text-text shadow-xs" : "text-text-tertiary hover:text-text-secondary"
                     )}>{tab.label}</button>
                 ))}
               </div>

@@ -1,6 +1,6 @@
 # Frontend — Knowledge Representation Platform
 
-React 18 + TypeScript + Vite frontend for the Kadence platform.
+React 19 + TypeScript + Vite frontend for the Kadence platform.
 
 > Part of the monorepo. See [root README](../README.md) for platform overview and [backend README](../backend/README.md) for API detail.
 
@@ -24,12 +24,12 @@ React 18 + TypeScript + Vite frontend for the Kadence platform.
 
 | Technology | Version | Purpose |
 |---|---|---|
-| React | 18.3.1 | UI framework |
-| TypeScript | 5.6.3 | Type safety |
-| Vite | 5.4.10 | Build tool and dev server |
-| react-router-dom | 6.30.1 | Client-side routing |
-| TailwindCSS | 3.4.14 | Utility-first CSS |
-| lucide-react | 0.468.0 | Icon library |
+| React | 19.3.1 | UI framework |
+| TypeScript | 7.0.2 | Type safety |
+| Vite | 8.3.4 | Build tool and dev server |
+| react-router-dom | 7.18.4 | Client-side routing |
+| TailwindCSS | 4.3.3 | Utility-first CSS (via `@tailwindcss/postcss`) |
+| lucide-react | 1.59.0 | Icon library |
 
 No Redux or Zustand — state is managed via React Context API.
 
@@ -40,8 +40,7 @@ No Redux or Zustand — state is managed via React Context API.
 ```
 frontend/
 ├── index.html                     # Root HTML, mounts #root
-├── vite.config.ts                 # Vite config (React plugin)
-├── tailwind.config.ts             # Tailwind + design tokens
+├── vite.config.ts                 # Vite config (React plugin, dev server); source of the tracked vite.config.js
 ├── tsconfig.json                  # TypeScript config (strict mode)
 │
 └── src/
@@ -112,7 +111,7 @@ frontend/
     │   └── cn.ts                  # Classname utility (clsx/twMerge pattern)
     │
     └── styles/
-        ├── globals.css            # Tailwind directives + base styles
+        ├── globals.css            # Tailwind import, @theme tokens, @utility classes
         └── tokens.css             # CSS custom properties (colors, spacing)
 ```
 
@@ -271,7 +270,7 @@ HSL-based CSS custom properties — dark theme by default:
 | `--color-warning` | Amber |
 | `--color-danger` | Red |
 
-### Component utility classes (`tailwind.config.ts`)
+### Component utility classes (`@utility` in `src/styles/globals.css`)
 
 | Class | Purpose |
 |---|---|
@@ -289,7 +288,7 @@ HSL-based CSS custom properties — dark theme by default:
 
 ### Custom animations
 
-`fadeIn`, `slideUp`, `scaleIn` — defined in `tailwind.config.ts`.
+`fadeIn`, `slideUp`, `scaleIn` — defined in the `@theme` block of `src/styles/globals.css`.
 
 ---
 
@@ -328,6 +327,16 @@ npm run preview
 ---
 
 ## Changelog
+
+### 2026-10-18 — Dependency upgrade: React 19, Vite 8, Tailwind 4, TypeScript 7
+
+- React 18→19, react-router-dom 6→7, Vite 5→8, @vitejs/plugin-react 4→6, TypeScript 5→7,
+  lucide-react 0.468→1.59
+- Tailwind 3→4 via `@tailwindcss/upgrade`: `tailwind.config.ts` removed, theme now in
+  `globals.css` `@theme`, component classes are `@utility`, PostCSS uses `@tailwindcss/postcss`
+  (`autoprefixer` dropped). Class renames applied (`shadow`→`shadow-sm`, `rounded`→`rounded-sm`, etc.)
+- `server` block (host, port, ngrok `allowedHosts`) moved into `vite.config.ts`; `tsc -b` regenerates
+  `vite.config.js` from it, which previously wiped those settings
 
 ### 2026-07-19 — Data Lineage view in Data Import + fix: join right-key defaulted to empty
 

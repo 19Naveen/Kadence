@@ -116,7 +116,7 @@ function Toggle({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={cn(
-          "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2",
+          "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-accent focus:ring-offset-2",
           checked ? "bg-accent" : "bg-surface-3"
         )}
       >
@@ -249,7 +249,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
             <SectionCard title="Current Plan" description="Your subscription details">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-accent/5 to-accent/5 border border-accent/20">
+              <div className="flex items-center justify-between p-4 rounded-lg bg-linear-to-r from-accent/5 to-accent/5 border border-accent/20">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-lg font-bold text">Pro Plan</span>
@@ -315,7 +315,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
                   { date: "Feb 2024", amount: "$49.00" },
                   { date: "Jan 2024", amount: "$49.00" },
                 ].map((inv, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded hover:bg-surface-2/30 transition-colors cursor-pointer">
+                  <div key={i} className="flex items-center justify-between p-2 rounded-sm hover:bg-surface-2/30 transition-colors cursor-pointer">
                     <span className="text-sm text">{inv.date}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text">{inv.amount}</span>
@@ -493,7 +493,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
                   <div>
                     <p className="text-sm font-medium text">{key.name}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <code className="text-xs bg-surface-2 px-2 py-0.5 rounded text-secondary font-mono">{key.prefix}••••••••</code>
+                      <code className="text-xs bg-surface-2 px-2 py-0.5 rounded-sm text-secondary font-mono">{key.prefix}••••••••</code>
                       <button className="text-xs text-accent hover:underline flex items-center gap-1">
                         <Copy className="w-3 h-3" /> Copy
                       </button>
@@ -504,7 +504,7 @@ function ActiveTabContent({ activeTab }: { activeTab: TabId }) {
                   <p className="text-xs text-secondary">Last used {key.lastUsed}</p>
                   <div className="flex items-center gap-2 mt-2">
                     {key.scopes.map((scope) => (
-                      <span key={scope} className="px-2 py-0.5 text-xs bg-surface-2 text-secondary rounded">{scope}</span>
+                      <span key={scope} className="px-2 py-0.5 text-xs bg-surface-2 text-secondary rounded-sm">{scope}</span>
                     ))}
                   </div>
                 </div>
