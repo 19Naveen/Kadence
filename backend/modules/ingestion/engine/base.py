@@ -20,6 +20,11 @@ class DataContainer(Protocol):
 class TransformEngine(Protocol):
     """Pluggable engine for the ingestion pipeline."""
 
+    # NOTE: today, `select_engine()` returns a plain dict of callables whose
+    # keys match these method names, rather than a class instance implementing
+    # this Protocol. This is intentional until a second engine (DuckDB) exists —
+    # see modules/ingestion/engine/select.py.
+
     def load_source(self, job: Any) -> DataContainer:
         """Load the job's source into the engine's native container."""
         ...

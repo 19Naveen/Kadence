@@ -10,7 +10,7 @@ def test_select_engine_returns_pandas_callable_dict():
     from modules.ingestion.engine import select_engine
 
     engine = select_engine({"row_count": 10, "file_size": 100})
-    for key in ("load_source", "apply", "schema", "write_parquet", "row_count", "column_count"):
+    for key in ("load_source", "apply_transforms", "infer_schema", "write_parquet", "row_count", "column_count"):
         assert key in engine
         assert callable(engine[key])
 
@@ -19,4 +19,4 @@ def test_select_engine_handles_none_metadata():
     from modules.ingestion.engine import select_engine
 
     engine = select_engine(None)
-    assert callable(engine["apply"])
+    assert callable(engine["apply_transforms"])

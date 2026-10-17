@@ -1,11 +1,11 @@
-"""Pandas-backed TransformEngine."""
+"""Pandas-backed TransformEngine (function-based; see engine/base.py for the target Protocol shape)."""
 
 import pandas as pd
 
-from modules.ingestion.schema_inference import infer_schema
+from modules.ingestion.schema_inference import infer_schema as _infer_schema
 from modules.ingestion.source_loader import load_source as _load_source
 from modules.ingestion.storage.minio_client import upload_dataframe_as_parquet
-from modules.ingestion.transforms import apply_transforms
+from modules.ingestion.transforms import apply_transforms as _apply_transforms
 
 
 def load_source(job, nrows: int | None = None) -> pd.DataFrame:
@@ -13,14 +13,14 @@ def load_source(job, nrows: int | None = None) -> pd.DataFrame:
     return _load_source(job, nrows=nrows)
 
 
-def apply(data: pd.DataFrame, steps: list) -> pd.DataFrame:
+def apply_transforms(data: pd.DataFrame, steps: list) -> pd.DataFrame:
     """Apply transform steps in order, returning a new DataFrame (input untouched)."""
-    return apply_transforms(data, steps)
+    return _apply_transforms(data, steps)
 
 
-def schema_of(data: pd.DataFrame) -> dict[str, str]:
+def infer_schema(data: pd.DataFrame) -> dict[str, str]:
     """Infer schema from a DataFrame."""
-    return infer_schema(data)
+    return _infer_schema(data)
 
 
 def write_parquet(data: pd.DataFrame, storage_path: str) -> int:
@@ -28,9 +28,9 @@ def write_parquet(data: pd.DataFrame, storage_path: str) -> int:
     return upload_dataframe_as_parquet(data, storage_path)
 
 
-def row_count_of(data: pd.DataFrame) -> int:
+def row_count(data: pd.DataFrame) -> int:
     return len(data)
 
 
-def column_count_of(data: pd.DataFrame) -> int:
+def column_count(data: pd.DataFrame) -> int:
     return len(data.columns)

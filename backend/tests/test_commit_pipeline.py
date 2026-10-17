@@ -23,6 +23,7 @@ def _commit_job(status=JobStatus.PENDING):
     return SimpleNamespace(
         id=uuid.uuid4(), dataset_id=uuid.uuid4(), status=status,
         source_type=SourceType.CSV, error_message=None, created_at=now, updated_at=now,
+        staging_metadata=None,
     )
 
 
@@ -64,12 +65,37 @@ def test_commit_400_when_not_pending(monkeypatch):
 # ── pipeline applies the transform plan ───────────────────────────────────────
 
 
+def _fake_select_engine(fake_load_source, fake_upload, captured):
+    def fake_apply_transforms(df, steps):
+        result = df
+        for step in steps:
+            if step.get("type") == "drop":
+                result = result.drop(columns=[step["column"]])
+        return result
+
+    def fake_write_parquet(df, path):
+        captured.update(uploaded=df, path=path)
+        return fake_upload(df, path)
+
+    def fake_infer_schema(df):
+        return {col: str(dtype) for col, dtype in df.dtypes.items()}
+
+    return lambda staging_metadata: {
+        "load_source": fake_load_source,
+        "apply_transforms": fake_apply_transforms,
+        "infer_schema": fake_infer_schema,
+        "write_parquet": fake_write_parquet,
+        "row_count": len,
+        "column_count": lambda df: len(df.columns),
+    }
+
+
 def test_pipeline_applies_transform_plan(monkeypatch):
     did, wid, jid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     job = SimpleNamespace(
         id=jid, dataset_id=did, staging_path="ws/ds/staging/job/f.csv",
         source_config={"_transforms": [{"type": "drop", "column": "b"}]},
-        status=JobStatus.PENDING,
+        status=JobStatus.PENDING, staging_metadata=None,
     )
     dataset = SimpleNamespace(id=did, workspace_id=wid)
     captured = {}
@@ -79,11 +105,17 @@ def test_pipeline_applies_transform_plan(monkeypatch):
     monkeypatch.setattr(repo, "get_dataset", lambda db, d: dataset)
     monkeypatch.setattr(repo, "get_latest_version", lambda db, d: None)
     monkeypatch.setattr(repo, "update_job_status", lambda *a, **k: None)
-    monkeypatch.setattr(tasks_mod, "load_source", lambda j: pd.DataFrame({"a": [1, 2], "b": [3, 4]}))
-    monkeypatch.setattr(tasks_mod, "upload_dataframe_as_parquet",
-                        lambda d, path: (captured.update(uploaded=d, path=path), 123)[1])
+    monkeypatch.setattr(
+        tasks_mod,
+        "select_engine",
+        _fake_select_engine(
+            fake_load_source=lambda j: pd.DataFrame({"a": [1, 2], "b": [3, 4]}),
+            fake_upload=lambda d, path: 123,
+            captured=captured,
+        ),
+    )
     monkeypatch.setattr(repo, "create_dataset_version", lambda db, payload: captured.update(version=payload))
-    monkeypatch.setattr(tasks_mod, "delete_object", lambda p: None)
+    monkeypatch.setattr("modules.ingestion.storage.minio_client.delete_object", lambda p: None)
 
     result = tasks_mod.run_ingestion_pipeline(str(jid))
 
@@ -98,7 +130,7 @@ def test_pipeline_applies_transform_plan(monkeypatch):
 def test_pipeline_no_transforms_versions_as_is(monkeypatch):
     did, wid, jid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     job = SimpleNamespace(id=jid, dataset_id=did, staging_path=None, source_config=None,
-                          status=JobStatus.PENDING)
+                          status=JobStatus.PENDING, staging_metadata=None)
     dataset = SimpleNamespace(id=did, workspace_id=wid)
     captured = {}
 
@@ -107,8 +139,15 @@ def test_pipeline_no_transforms_versions_as_is(monkeypatch):
     monkeypatch.setattr(repo, "get_dataset", lambda db, d: dataset)
     monkeypatch.setattr(repo, "get_latest_version", lambda db, d: None)
     monkeypatch.setattr(repo, "update_job_status", lambda *a, **k: None)
-    monkeypatch.setattr(tasks_mod, "load_source", lambda j: pd.DataFrame({"a": [1], "b": [2]}))
-    monkeypatch.setattr(tasks_mod, "upload_dataframe_as_parquet", lambda d, path: 1)
+    monkeypatch.setattr(
+        tasks_mod,
+        "select_engine",
+        _fake_select_engine(
+            fake_load_source=lambda j: pd.DataFrame({"a": [1], "b": [2]}),
+            fake_upload=lambda d, path: 1,
+            captured=captured,
+        ),
+    )
     monkeypatch.setattr(repo, "create_dataset_version", lambda db, payload: captured.update(version=payload))
 
     result = tasks_mod.run_ingestion_pipeline(str(jid))

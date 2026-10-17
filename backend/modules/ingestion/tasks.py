@@ -29,9 +29,9 @@ def run_ingestion_pipeline(self, job_id: str):
         # Apply the transform plan the user built in the import wizard (DataForge).
         transforms = (job.source_config or {}).get("_transforms") or []
         if transforms:
-            df = engine["apply"](df, transforms)
+            df = engine["apply_transforms"](df, transforms)
 
-        inferred_schema = engine["schema"](df)
+        inferred_schema = engine["infer_schema"](df)
 
         latest_version = repo.get_latest_version(db, job.dataset_id)
         next_version = (latest_version.version + 1) if latest_version else 1
