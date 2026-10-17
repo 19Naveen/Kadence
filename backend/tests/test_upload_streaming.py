@@ -18,8 +18,13 @@ from modules.ingestion.enums import JobStatus, SourceType
 
 
 @pytest.fixture
-def client():
-    app.dependency_overrides[get_db] = lambda: MagicMock()
+def fake_db():
+    return MagicMock()
+
+
+@pytest.fixture
+def client(fake_db):
+    app.dependency_overrides[get_db] = lambda: fake_db
     app.dependency_overrides[get_current_user] = lambda: {"sub": "u1"}
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -52,8 +57,12 @@ def upload_env(monkeypatch):
     monkeypatch.setattr(router_mod, "upload_staging_stream", fake_stream)
     monkeypatch.setattr(router_mod, "delete_object",
                         lambda path: recorded.update(deleted=path))
-    monkeypatch.setattr(router_mod, "load_source",
-                        lambda j, nrows=None: pd.DataFrame({"a": [1], "b": [2]}))
+    def fake_load_source(j, nrows=None):
+        # The real loader reads j.staging_path; it must already point at the staged object.
+        assert j.staging_path == recorded["stream_path"]
+        return pd.DataFrame({"a": [1], "b": [2]})
+
+    monkeypatch.setattr(router_mod, "load_source", fake_load_source)
     return SimpleNamespace(job=job, dataset=dataset, recorded=recorded,
                            workspace_id=workspace_id, dataset_id=dataset_id)
 
@@ -94,6 +103,32 @@ def test_empty_upload_returns_400_and_cleans_up(client, upload_env):
     assert resp.status_code == 400
     assert "empty" in resp.json()["detail"].lower()
     assert upload_env.recorded["deleted"] == upload_env.recorded["stream_path"]
+
+
+def _boom(j, nrows=None):
+    raise ValueError("bad csv")
+
+
+def test_unparseable_upload_deletes_job_and_staged_object(client, upload_env, fake_db, monkeypatch):
+    monkeypatch.setattr(router_mod, "load_source", _boom)
+    resp = _post(client, upload_env, b"not,a\ncsv")
+
+    assert resp.status_code == 400
+    assert "bad csv" in resp.json()["detail"]
+    fake_db.delete.assert_called_once_with(upload_env.job)  # existing dataset is kept
+    assert upload_env.recorded["deleted"] == upload_env.recorded["stream_path"]
+
+
+def test_rejected_upload_also_deletes_dataset_it_created(client, upload_env, monkeypatch):
+    monkeypatch.setattr(repo, "get_dataset", lambda db, did: None)
+    monkeypatch.setattr(repo, "create_dataset", lambda db, payload: upload_env.dataset)
+    monkeypatch.setattr(repo, "delete_dataset",
+                        lambda db, did, wid: upload_env.recorded.update(dataset_deleted=did) or [])
+    monkeypatch.setattr(router_mod, "load_source", _boom)
+    resp = _post(client, upload_env, b"not,a\ncsv")
+
+    assert resp.status_code == 400
+    assert upload_env.recorded["dataset_deleted"] == upload_env.dataset_id
 
 
 def test_full_bytes_helper_is_gone():

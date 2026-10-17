@@ -546,6 +546,15 @@ celery -A celery_app worker --loglevel=info
   `pd.read_sql` does) instead of strings
 - Tests: `test_postgres_connector.py` (internal keys)
 
+### 2026-10-18 — Fix: file upload crashed with `'NoneType' object has no attribute 'replace'`
+
+- `POST /jobs/upload` called `load_source(job)` before setting `job.staging_path`, so every file
+  upload 500'd and left a `PENDING` job + orphaned staged object. `staging_path` is now set first
+- A rejected upload (empty or unparseable) returns 400 and persists nothing: the staged object and
+  job are deleted, and the dataset too if that request created it
+- `tests/test_upload_streaming.py`: fake `load_source` asserts `staging_path` is set; tests for the
+  rejected-upload cleanup paths
+
 ### 2026-10-18 — Postgres database name lowercased to `kadence`
 
 - `docker-compose.yml` now creates `POSTGRES_DB: kadence`. Postgres database names are

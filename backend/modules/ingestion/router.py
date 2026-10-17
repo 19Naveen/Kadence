@@ -130,7 +130,8 @@ async def create_job_from_file(
         )
 
     dataset = repo.get_dataset(db, dataset_id)
-    if not dataset:
+    created_dataset = dataset is None
+    if created_dataset:
         dataset = repo.create_dataset(
             db,
             {
@@ -160,19 +161,32 @@ async def create_job_from_file(
     staging_path = (
         f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/source{ext}"
     )
-    # Stream the upload to MinIO in chunks — never buffer the whole file in RAM.
-    file_size = upload_staging_stream(file.file, staging_path)
-    if file_size == 0:
+    def reject_upload(detail: str) -> HTTPException:
+        """A rejected upload persists nothing: drop the staged object, the job, and the
+        dataset too if this request created it (otherwise it lingers with 0 versions)."""
         try:
             delete_object(staging_path)
         except Exception:
             pass
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
-        )
+        if created_dataset:
+            repo.delete_dataset(db, dataset.id, dataset.workspace_id)  # also deletes the job
+        else:
+            db.delete(job)
+            db.commit()
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
+    # Stream the upload to MinIO in chunks — never buffer the whole file in RAM.
+    file_size = upload_staging_stream(file.file, staging_path)
+    if file_size == 0:
+        raise reject_upload("Uploaded file is empty")
+
+    # load_source reads job.staging_path, so it must be set before the schema peek.
+    job.staging_path = staging_path
     # Parse to get row count for metadata (also converts to Parquet for DuckDB).
-    temp_df = load_source(job, nrows=1)  # quick schema peek
+    try:
+        temp_df = load_source(job, nrows=1)  # quick schema peek
+    except Exception as exc:
+        raise reject_upload(f"Could not parse uploaded file: {exc}")
     col_count = len(temp_df.columns)
     staging_metadata = {
         "file_size": file_size,
@@ -180,7 +194,6 @@ async def create_job_from_file(
         "column_count": col_count,
         "source_format": source_type,
     }
-    job.staging_path = staging_path
     job.staging_metadata = staging_metadata
     db.commit()
     db.refresh(job)
