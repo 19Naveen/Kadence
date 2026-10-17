@@ -125,7 +125,7 @@ function SliderWithNumber({
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="relative w-full h-1.5 cursor-pointer appearance-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
+          className="relative w-full h-1.5 cursor-pointer appearance-none bg-transparent focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent/20"
           style={{ 
             background: `linear-gradient(to right, var(--${colorClass.replace('text-', '')}), var(--${colorClass.replace('text-', '')})) ${percentage}% / 100% no-repeat`
           }}
@@ -399,7 +399,7 @@ export function DeploySimPage() {
       
       <div className="grid gap-6 xl:grid-cols-12">
         <article className="card xl:col-span-5 flex flex-col overflow-hidden">
-          <div className="border-b border-subtle bg-gradient-to-r from-accent/5 to-transparent px-5 py-4">
+          <div className="border-b border-subtle bg-linear-to-r from-accent/5 to-transparent px-5 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text">Parameter Controls</h2>
@@ -492,7 +492,7 @@ export function DeploySimPage() {
         </article>
         
         <article className="card xl:col-span-3 flex flex-col overflow-hidden">
-          <div className="border-b border-subtle bg-gradient-to-b from-accent/5 to-transparent px-5 py-4">
+          <div className="border-b border-subtle bg-linear-to-b from-accent/5 to-transparent px-5 py-4">
             <h2 className="text-base font-semibold text">Prediction</h2>
             <p className="mt-1 text-[11px] uppercase tracking-wider text-secondary">Real-time risk assessment</p>
           </div>
@@ -518,7 +518,7 @@ export function DeploySimPage() {
         </article>
         
         <article className="card xl:col-span-4 flex flex-col overflow-hidden">
-          <div className="border-b border-subtle bg-gradient-to-l from-accent/5 to-transparent px-5 py-4">
+          <div className="border-b border-subtle bg-linear-to-l from-accent/5 to-transparent px-5 py-4">
             <h2 className="text-base font-semibold text">Saved Scenarios</h2>
             <p className="mt-1 text-[11px] uppercase tracking-wider text-secondary">Compare and select saved state</p>
           </div>
@@ -601,7 +601,7 @@ export function DeploySimPage() {
       
       <div className="grid gap-6 lg:grid-cols-2">
         <article className="card flex flex-col overflow-hidden">
-          <div className="border-b border-subtle bg-gradient-to-r from-success/5 to-transparent px-5 py-4">
+          <div className="border-b border-subtle bg-linear-to-r from-success/5 to-transparent px-5 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text">Active Endpoints</h2>
@@ -641,7 +641,7 @@ export function DeploySimPage() {
         </article>
         
         <article className="card flex flex-col overflow-hidden">
-          <div className="border-b border-subtle bg-gradient-to-r from-info/5 to-transparent px-5 py-4">
+          <div className="border-b border-subtle bg-linear-to-r from-info/5 to-transparent px-5 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text">Batch Scoring</h2>

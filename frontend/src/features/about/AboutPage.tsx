@@ -76,7 +76,7 @@ export function AboutPage() {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 max-w-6xl mx-auto p-4">
       {/* Profile Section */}
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
         <h1 className="text-xl font-bold text-slate-900">Profile Settings</h1>
         <p className="text-sm text-slate-500 mb-6">Manage your public identity.</p>
 
@@ -88,7 +88,7 @@ export function AboutPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-primary/20 outline-none transition"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-primary/20 outline-hidden transition"
               />
             ) : (
               <p className="text-sm font-medium py-2">{user?.username ?? "—"}</p>
@@ -135,7 +135,7 @@ export function AboutPage() {
       </section>
 
       {/* Password Section */}
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
         <h2 className="text-xl font-bold text-slate-900">Security</h2>
         <p className="text-sm text-slate-500 mb-6">Update your password to keep your account secure.</p>
 
@@ -147,7 +147,7 @@ export function AboutPage() {
               autoComplete="current-password"
               value={pwd.current} 
               onChange={(e) => setPwd({...pwd, current: e.target.value})} 
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-500/10 transition" 
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-hidden focus:ring-2 focus:ring-rose-500/10 transition" 
             />
           </div>
 
@@ -159,7 +159,7 @@ export function AboutPage() {
                 autoComplete="new-password"
                 value={pwd.next} 
                 onChange={(e) => setPwd({...pwd, next: e.target.value})} 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-500/10" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-hidden focus:ring-2 focus:ring-rose-500/10" 
               />
             </div>
             <div>
@@ -169,7 +169,7 @@ export function AboutPage() {
                 autoComplete="new-password"
                 value={pwd.confirm} 
                 onChange={(e) => setPwd({...pwd, confirm: e.target.value})} 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-rose-500/10" 
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-hidden focus:ring-2 focus:ring-rose-500/10" 
               />
             </div>
           </div>

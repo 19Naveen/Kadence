@@ -11,7 +11,7 @@ export function CtaBanner() {
               "radial-gradient(ellipse 80% 100% at 50% 0%, rgba(99,102,241,0.12), transparent)",
           }}
         >
-          <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-96 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+          <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-96 h-px bg-linear-to-r from-transparent via-primary/40 to-transparent" />
 
           <p className="text-xs font-black uppercase tracking-widest text-primary mb-4">
             Start building today

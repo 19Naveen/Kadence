@@ -118,9 +118,9 @@ export function AppShell() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg text-text font-sans">
       {/* Sidebar - Pro Design */}
-      <aside className="hidden w-[var(--sidebar-w)] shrink-0 flex-col border-r border-border bg-surface lg:flex">
+      <aside className="hidden w-(--sidebar-w) shrink-0 flex-col border-r border-border bg-surface lg:flex">
         {/* Brand/Header */}
-        <div className="h-[var(--header-h)] border-b border-border px-6 flex items-center justify-between">
+        <div className="h-(--header-h) border-b border-border px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/20">
               <span className="text-sm font-bold">K</span>
@@ -143,7 +143,7 @@ export function AppShell() {
             </div>
             {activeDataset && (
               <div className="mt-2 flex items-center gap-1.5 overflow-hidden">
-                <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 <span className="text-[11px] text-text-secondary truncate">{activeDataset.name}</span>
               </div>
             )}
@@ -255,7 +255,7 @@ export function AppShell() {
       {/* Main Content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Modern Header */}
-        <header className="h-[var(--header-h)] shrink-0 px-8 flex items-center justify-between border-b border-border bg-white z-10">
+        <header className="h-(--header-h) shrink-0 px-8 flex items-center justify-between border-b border-border bg-white z-10">
           <div className="flex items-center gap-6">
             <button
               className="lg:hidden p-2 hover:bg-surface-2 rounded-xl transition-colors"
@@ -315,9 +315,9 @@ export function AppShell() {
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
-          <div className="lg:hidden fixed inset-0 z-[100] flex">
-            <div className="w-[var(--sidebar-w)] bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
-              <div className="h-[var(--header-h)] border-b px-6 flex items-center justify-between">
+          <div className="lg:hidden fixed inset-0 z-100 flex">
+            <div className="w-(--sidebar-w) bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
+              <div className="h-(--header-h) border-b px-6 flex items-center justify-between">
                 <span className="font-bold">Menu</span>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-2 hover:bg-surface-2 rounded-xl">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -339,7 +339,7 @@ export function AppShell() {
                 ))}
               </div>
             </div>
-            <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+            <div className="flex-1 bg-black/40 backdrop-blur-xs" onClick={() => setMobileMenuOpen(false)} />
           </div>
         )}
 

@@ -33,7 +33,7 @@ export function HomePage() {
               <div className="flex items-end justify-between">
                 <p className={cn("text-3xl font-black tracking-tighter tabular-nums", m.color)}>{m.value}</p>
                 {m.trend === "STABLE" || m.trend === "ONLINE" ? (
-                  <span className="text-[9px] font-black text-success border border-success/20 bg-success/5 px-2 py-0.5 rounded flex items-center gap-1">
+                  <span className="text-[9px] font-black text-success border border-success/20 bg-success/5 px-2 py-0.5 rounded-sm flex items-center gap-1">
                     <span className="size-1 bg-success rounded-full animate-pulse" />
                     {m.trend}
                   </span>

@@ -89,7 +89,7 @@ export function HeroSection() {
               {[60, 40, 75, 55, 90, 45, 80, 65, 95, 50, 70, 85].map((h, i) => (
                 <div
                   key={i}
-                  className="flex-1 rounded-sm bg-primary/30"
+                  className="flex-1 rounded-xs bg-primary/30"
                   style={{ height: `${h}%` }}
                 />
               ))}
