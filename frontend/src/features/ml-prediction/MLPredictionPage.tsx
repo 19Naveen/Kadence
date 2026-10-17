@@ -1,7 +1,11 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { LoaderCircle } from "lucide-react";
 import { PageHeader } from "../../components/shared/PageHeader";
+import { PreviewNotice } from "../../components/shared/PreviewNotice";
 import { cn } from "../../lib/cn";
+import { formatBytes, formatCount, formatDate, formatDateTime } from "../../lib/format";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -12,18 +16,21 @@ interface ModelInfo {
   algorithm: string;
   accuracy: number;
   features: string[];
-  createdAt: string;
+  createdAt: string; // ISO date
   version: string;
-  status: "ready" | "training" | "archived";
-  latency: string;
-  size: string;
+}
+
+interface Contribution {
+  feature: string;
+  importance: number;
+  direction: "+" | "−";
 }
 
 interface PredictionResult {
-  value: string;
+  value: "Positive" | "Negative";
   confidence: number;
   probabilities: { label: string; prob: number }[];
-  latency: number;
+  contributions: Contribution[];
 }
 
 interface BatchResult {
@@ -34,107 +41,149 @@ interface BatchResult {
   processedAt: string;
 }
 
-type PredictionTab = "playground" | "batch" | "api" | "history";
+interface HistoryItem {
+  id: string;
+  model: string;
+  input: string;
+  result: PredictionResult["value"];
+  confidence: number;
+  at: string; // ISO timestamp
+}
+
+type PredictionTab = "playground" | "batch" | "history";
 
 /* ------------------------------------------------------------------ */
-/*  Mock Data                                                          */
+/*  Sample data (no model backend yet)                                 */
 /* ------------------------------------------------------------------ */
-const mockModels: ModelInfo[] = [
+const sampleModels: ModelInfo[] = [
   {
-    id: "m-1", name: "Customer Churn v2", algorithm: "XGBoost", accuracy: 0.948,
+    id: "m-1", name: "Customer churn", algorithm: "XGBoost", accuracy: 0.948,
     features: ["age", "income", "education", "employment", "balance", "transactions"],
-    createdAt: "2024-03-15", version: "2.1.0", status: "ready", latency: "12ms", size: "4.2 MB",
+    createdAt: "2026-03-15", version: "2.1.0",
   },
   {
-    id: "m-2", name: "Fraud Detection", algorithm: "Random Forest", accuracy: 0.923,
+    id: "m-2", name: "Fraud detection", algorithm: "Random Forest", accuracy: 0.923,
     features: ["age", "income", "education", "employment", "balance", "transactions"],
-    createdAt: "2024-03-10", version: "1.3.0", status: "ready", latency: "8ms", size: "12.1 MB",
+    createdAt: "2026-03-10", version: "1.3.0",
   },
   {
-    id: "m-3", name: "Credit Scoring", algorithm: "Logistic Regression", accuracy: 0.861,
+    id: "m-3", name: "Credit scoring", algorithm: "Logistic Regression", accuracy: 0.861,
     features: ["age", "income", "balance", "transactions"],
-    createdAt: "2024-02-28", version: "1.0.0", status: "ready", latency: "3ms", size: "0.8 MB",
+    createdAt: "2026-02-28", version: "1.0.0",
   },
 ];
 
 const featureDefinitions = [
-  { name: "age", label: "Age", type: "number" as const, placeholder: "e.g., 35" },
-  { name: "income", label: "Annual Income", type: "number" as const, placeholder: "e.g., 50000" },
-  { name: "education", label: "Education Level", type: "select" as const, options: ["High School", "Bachelor", "Master", "PhD"] },
-  { name: "employment", label: "Employment Status", type: "select" as const, options: ["Employed", "Self-employed", "Unemployed", "Retired"] },
-  { name: "balance", label: "Account Balance", type: "number" as const, placeholder: "e.g., 10000" },
-  { name: "transactions", label: "Monthly Transactions", type: "number" as const, placeholder: "e.g., 15" },
+  { name: "age", label: "Age", type: "number" as const, placeholder: "e.g. 35" },
+  { name: "income", label: "Annual income (SGD)", type: "number" as const, placeholder: "e.g. 50000" },
+  { name: "education", label: "Education level", type: "select" as const, options: ["High School", "Bachelor", "Master", "PhD"] },
+  { name: "employment", label: "Employment status", type: "select" as const, options: ["Employed", "Self-employed", "Unemployed", "Retired"] },
+  { name: "balance", label: "Account balance (SGD)", type: "number" as const, placeholder: "e.g. 10000" },
+  { name: "transactions", label: "Monthly transactions", type: "number" as const, placeholder: "e.g. 15" },
 ];
 
-const mockHistory = [
-  { id: "p-1", model: "Customer Churn v2", input: "age=35, income=52000", result: "Positive", confidence: 0.92, time: "2 min ago" },
-  { id: "p-2", model: "Customer Churn v2", input: "age=28, income=34000", result: "Negative", confidence: 0.87, time: "5 min ago" },
-  { id: "p-3", model: "Fraud Detection", input: "age=45, income=78000", result: "Positive", confidence: 0.95, time: "12 min ago" },
-  { id: "p-4", model: "Credit Scoring", input: "age=52, balance=5600", result: "Negative", confidence: 0.78, time: "1 hour ago" },
-];
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+const UPLOAD_EXTENSIONS = [".csv", ".jsonl", ".parquet"];
 
 /* ------------------------------------------------------------------ */
-/*  Confidence Gauge                                                   */
+/*  Deterministic simulation: same inputs always give the same output  */
 /* ------------------------------------------------------------------ */
-function ConfidenceGauge({ value, size = 100 }: { value: number; size?: number }) {
+/** FNV-1a string hash mapped to [0, 1). */
+function hash01(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+function simulatePrediction(model: ModelInfo, inputs: Record<string, string>): PredictionResult {
+  const key = model.id + model.features.map((f) => `|${f}=${inputs[f] ?? ""}`).join("");
+  const positive = 0.1 + 0.8 * hash01(key);
+  const value = positive >= 0.5 ? "Positive" : "Negative";
+  const confidence = Math.max(positive, 1 - positive);
+
+  const raw = model.features.map((f) => ({ feature: f, w: 0.1 + hash01(`${key}:${f}`) }));
+  const total = raw.reduce((sum, r) => sum + r.w, 0);
+  const contributions: Contribution[] = raw
+    .map((r) => ({
+      feature: featureDefinitions.find((d) => d.name === r.feature)?.label.replace(/ \(SGD\)$/, "") ?? r.feature,
+      importance: r.w / total,
+      direction: hash01(`${key}:${r.feature}:dir`) >= 0.5 ? ("+" as const) : ("−" as const),
+    }))
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 4);
+
+  return {
+    value,
+    confidence,
+    probabilities: [
+      { label: "Positive", prob: positive },
+      { label: "Negative", prob: 1 - positive },
+    ],
+    contributions,
+  };
+}
+
+function simulateBatch(model: ModelInfo, file: File): BatchResult {
+  const key = `${model.id}:${file.name}:${file.size}`;
+  const total = 500 + Math.floor(hash01(`${key}:n`) * 4500);
+  const positive = Math.round(total * (0.35 + 0.3 * hash01(`${key}:p`)));
+  return {
+    total,
+    positive,
+    negative: total - positive,
+    avgConfidence: 0.75 + 0.15 * hash01(`${key}:c`),
+    processedAt: new Date().toISOString(),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small pieces                                                       */
+/* ------------------------------------------------------------------ */
+function SimulatedBadge() {
+  return <span className="badge bg-signal-muted text-signal">Simulated</span>;
+}
+
+function ConfidenceGauge({ value, size = 112 }: { value: number; size?: number }) {
   const radius = (size - 12) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference * (1 - value);
 
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(0, 0%, 92%)" strokeWidth="6" />
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(0, 0%, 9%)" strokeWidth="6"
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--surface-3))" strokeWidth="6" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="6"
           strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
           className="transition-all duration-700 ease-out" />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="text-xl font-semibold font-mono">{(value * 100).toFixed(0)}%</span>
-        <span className="text-[9px] text-text-tertiary uppercase tracking-wider">Confidence</span>
+        <span className="font-mono text-xl font-semibold text-text">{(value * 100).toFixed(0)}%</span>
+        <span className="text-2xs text-text-tertiary">Confidence</span>
       </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Model Card                                                         */
-/* ------------------------------------------------------------------ */
 function ModelCard({ model, isSelected, onSelect }: {
   model: ModelInfo; isSelected: boolean; onSelect: () => void;
 }) {
   return (
     <button
       onClick={onSelect}
+      aria-pressed={isSelected}
       className={cn(
-        "w-full rounded-lg border p-3 text-left transition-all duration-150",
-        isSelected ? "border-primary bg-primary/3" :
-          model.status === "training" ? "border-border-subtle opacity-50" :
-            "border-border-subtle hover:border-border"
+        "w-full rounded-lg border p-3 text-left transition-colors",
+        isSelected ? "border-primary bg-primary-muted" : "border-border-subtle hover:border-border",
       )}
-      disabled={model.status === "training"}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[13px] font-semibold text">{model.name}</p>
-        <span className={cn(
-          "rounded-sm px-1.5 py-0.5 text-[10px] font-medium",
-          model.status === "ready" ? "bg-success-muted text-success" : "bg-warning-muted text-warning"
-        )}>{model.status}</span>
-      </div>
-      <p className="text-[11px] text-text-tertiary">{model.algorithm} · v{model.version}</p>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-        <div>
-          <span className="text-text-tertiary">Accuracy</span>
-          <p className="font-mono font-medium">{(model.accuracy * 100).toFixed(1)}%</p>
-        </div>
-        <div>
-          <span className="text-text-tertiary">Latency</span>
-          <p className="font-mono font-medium">{model.latency}</p>
-        </div>
-        <div>
-          <span className="text-text-tertiary">Size</span>
-          <p className="font-mono font-medium">{model.size}</p>
-        </div>
+      <p className="text-sm font-semibold text-text">{model.name}</p>
+      <p className="text-xs text-text-tertiary">{model.algorithm} · v{model.version}</p>
+      <div className="mt-2 text-xs">
+        <span className="text-text-tertiary">Sample accuracy </span>
+        <span className="font-mono font-medium text-text">{(model.accuracy * 100).toFixed(1)}%</span>
       </div>
     </button>
   );
@@ -146,15 +195,15 @@ function ModelCard({ model, isSelected, onSelect }: {
 function PlaygroundTab({
   model, onPredict, isPredicting, result,
 }: {
-  model: ModelInfo | null;
+  model: ModelInfo;
   onPredict: (inputs: Record<string, string>) => void;
   isPredicting: boolean;
   result: PredictionResult | null;
 }) {
   const [inputs, setInputs] = useState<Record<string, string>>({});
 
-  const features = featureDefinitions.filter((f) => model?.features.includes(f.name));
-  const isValid = features.every((f) => inputs[f.name] && inputs[f.name] !== "");
+  const features = featureDefinitions.filter((f) => model.features.includes(f.name));
+  const isValid = features.every((f) => inputs[f.name]);
 
   const fillSample = () => {
     setInputs({
@@ -162,114 +211,94 @@ function PlaygroundTab({
     });
   };
 
-  if (!model) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <h3 className="text-sm font-semibold text">Select a Model</h3>
-        <p className="mt-1 text-xs text-text-tertiary">Choose a model from the sidebar to start.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      {/* Input */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text">Input Features</h3>
-          <button onClick={fillSample} className="text-xs text-text-tertiary hover:text-text transition-colors">Fill sample</button>
+          <h3 className="text-sm font-semibold text-text">Input features</h3>
+          <button onClick={fillSample} className="btn btn-ghost btn-sm">Fill sample</button>
         </div>
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {features.map((feature) => (
-            <div key={feature.name} className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">{feature.label}</label>
+            <div key={feature.name}>
+              <label htmlFor={`pred-${feature.name}`} className="field-label">{feature.label}</label>
               {feature.type === "select" ? (
-                <select value={inputs[feature.name] || ""} onChange={(e) => setInputs({ ...inputs, [feature.name]: e.target.value })} className="input text-sm">
+                <select id={`pred-${feature.name}`} value={inputs[feature.name] ?? ""}
+                  onChange={(e) => setInputs({ ...inputs, [feature.name]: e.target.value })} className="input">
                   <option value="">Select…</option>
-                  {feature.options?.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
+                  {feature.options.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
                 </select>
               ) : (
-                <input type="number" placeholder={feature.placeholder} value={inputs[feature.name] || ""}
-                  onChange={(e) => setInputs({ ...inputs, [feature.name]: e.target.value })} className="input text-sm" />
+                <input id={`pred-${feature.name}`} type="number" placeholder={feature.placeholder} value={inputs[feature.name] ?? ""}
+                  onChange={(e) => setInputs({ ...inputs, [feature.name]: e.target.value })} className="input" />
               )}
             </div>
           ))}
         </div>
-        <button onClick={() => onPredict(inputs)} disabled={isPredicting || !isValid}
-          className={cn("btn w-full py-2.5 text-sm font-medium",
-            isPredicting ? "bg-primary/50 text-white" : isValid ? "btn-primary" : "bg-surface-3 text-text-tertiary cursor-not-allowed"
-          )}>
-          {isPredicting ? (
-            <span className="flex items-center gap-2">
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Predicting…
-            </span>
-          ) : "Run Prediction"}
+        <button onClick={() => onPredict(inputs)} disabled={isPredicting || !isValid} className="btn btn-primary w-full">
+          {isPredicting ? <><LoaderCircle size={15} className="animate-spin" /> Predicting…</> : "Run prediction"}
         </button>
       </div>
 
-      {/* Result */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold text">Result</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-text">Result</h3>
+          <SimulatedBadge />
+        </div>
         {!result && !isPredicting && (
           <div className="flex flex-col items-center justify-center rounded-lg border border-border-subtle p-10 text-center">
             <p className="text-sm text-text-secondary">No prediction yet</p>
-            <p className="mt-0.5 text-xs text-text-tertiary">Fill in features and run prediction</p>
+            <p className="mt-0.5 text-xs text-text-tertiary">Fill in the features and run a prediction.</p>
           </div>
         )}
         {isPredicting && (
           <div className="flex flex-col items-center justify-center rounded-lg border border-border-subtle p-10 text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mb-3" />
-            <p className="text-sm text-text-secondary">Running inference…</p>
+            <LoaderCircle size={28} className="mb-3 animate-spin text-primary" />
+            <p className="text-sm text-text-secondary">Running simulated prediction…</p>
           </div>
         )}
         {result && !isPredicting && (
-          <div className="space-y-3 animate-in fade-in duration-300">
+          <div className="space-y-3">
             <div className={cn(
               "rounded-lg border p-5",
-              result.value === "Positive" ? "border-success/30 bg-success-muted/40" : "border-danger/30 bg-danger-muted/40"
+              result.value === "Positive" ? "border-success/30 bg-success-muted" : "border-danger/30 bg-danger-muted",
             )}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">Prediction</p>
-                  <p className={cn("mt-1 text-2xl font-semibold",
-                    result.value === "Positive" ? "text-success" : "text-danger"
-                  )}>{result.value}</p>
-                  <p className="mt-1 text-xs text-text-tertiary">{result.latency}ms inference</p>
+                  <p className="section-label">Prediction</p>
+                  <p className={cn("mt-1 text-2xl font-semibold", result.value === "Positive" ? "text-success" : "text-danger")}>
+                    {result.value}
+                  </p>
                 </div>
                 <ConfidenceGauge value={result.confidence} />
               </div>
             </div>
 
-            <div className="rounded-lg border border-border-subtle p-4 space-y-2.5">
-              <p className="section-label">Class Probabilities</p>
+            <div className="space-y-2.5 rounded-lg border border-border-subtle p-4">
+              <p className="section-label">Class probabilities</p>
               {result.probabilities.map((p) => (
                 <div key={p.label} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className={cn("font-medium", p.label === result.value ? "text-text" : "text-text-tertiary")}>{p.label}</span>
-                    <span className="font-mono">{(p.prob * 100).toFixed(1)}%</span>
+                    <span className="font-mono text-text">{(p.prob * 100).toFixed(1)}%</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
-                    <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${p.prob * 100}%`, opacity: p.label === result.value ? 1 : 0.3 }} />
+                    <div className="h-full rounded-full bg-primary transition-all duration-500"
+                      style={{ width: `${p.prob * 100}%`, opacity: p.label === result.value ? 1 : 0.3 }} />
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="rounded-lg border border-border-subtle p-4 space-y-2.5">
-              <p className="section-label">Feature Contributions</p>
-              {[
-                { feature: "Income", importance: 0.32, direction: "+" },
-                { feature: "Balance", importance: 0.24, direction: "+" },
-                { feature: "Age", importance: 0.18, direction: "−" },
-                { feature: "Transactions", importance: 0.15, direction: "+" },
-              ].map((f) => (
+            <div className="space-y-2.5 rounded-lg border border-border-subtle p-4">
+              <p className="section-label">Feature contributions (simulated)</p>
+              {result.contributions.map((f) => (
                 <div key={f.feature} className="flex items-center gap-3 text-xs">
-                  <span className="w-20 text-text-secondary">{f.feature}</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                  <span className="w-24 shrink-0 truncate text-text-secondary">{f.feature}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
                     <div className="h-full rounded-full bg-primary" style={{ width: `${f.importance * 100}%` }} />
                   </div>
-                  <span className="font-mono w-8 text-right text-text-secondary">{f.direction}{(f.importance * 100).toFixed(0)}%</span>
+                  <span className="w-10 text-right font-mono text-text-secondary">{f.direction}{(f.importance * 100).toFixed(0)}%</span>
                 </div>
               ))}
             </div>
@@ -283,100 +312,137 @@ function PlaygroundTab({
 /* ------------------------------------------------------------------ */
 /*  Batch Tab                                                          */
 /* ------------------------------------------------------------------ */
-function BatchTab({ model }: { model: ModelInfo | null }) {
+function BatchTab({ model }: { model: ModelInfo }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const timer = useRef<number | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
   const [progress, setProgress] = useState(0);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) { setFileName(file.name); setBatchResult(null); }
-  };
-
-  const handleProcess = useCallback(() => {
-    setIsProcessing(true); setProgress(0); setBatchResult(null);
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        const next = prev + Math.random() * 15 + 5;
-        if (next >= 100) {
-          clearInterval(interval);
-          setIsProcessing(false);
-          setBatchResult({ total: 1250, positive: 734, negative: 516, avgConfidence: 0.873, processedAt: new Date().toLocaleTimeString() });
-          return 100;
-        }
-        return next;
-      });
-    }, 300);
+  const stopTimer = useCallback(() => {
+    if (timer.current !== null) window.clearInterval(timer.current);
+    timer.current = null;
   }, []);
 
-  if (!model) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <h3 className="text-sm font-semibold text">Select a Model</h3>
-        <p className="mt-1 text-xs text-text-tertiary">Choose a model to run batch predictions.</p>
-      </div>
-    );
-  }
+  useEffect(() => stopTimer, [stopTimer]);
+
+  const acceptFile = (f: File | undefined) => {
+    if (!f) return;
+    if (!UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext))) {
+      setError("Unsupported file type. Use a CSV, JSONL or Parquet file.");
+      return;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`That file is ${formatBytes(f.size)}. The limit is ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+      return;
+    }
+    setError(null);
+    setFile(f);
+    setBatchResult(null);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    acceptFile(e.dataTransfer.files[0]);
+  };
+
+  const handleProcess = () => {
+    if (!file) return;
+    stopTimer();
+    setIsProcessing(true);
+    setProgress(0);
+    setBatchResult(null);
+    let pct = 0;
+    timer.current = window.setInterval(() => {
+      pct += 12;
+      if (pct >= 100) {
+        stopTimer();
+        setProgress(100);
+        setIsProcessing(false);
+        setBatchResult(simulateBatch(model, file));
+      } else {
+        setProgress(pct);
+      }
+    }, 300);
+  };
+
+  const reset = () => {
+    stopTimer();
+    setFile(null);
+    setBatchResult(null);
+    setIsProcessing(false);
+    setProgress(0);
+  };
 
   return (
     <div className="space-y-5">
-      <div className={cn(
-        "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-10 text-center transition-all",
-        fileName ? "border-success/30 bg-success-muted/20" : "border-border hover:border-text-tertiary/40"
-      )}>
-        {fileName ? (
+      <div
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        className={cn(
+          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-10 text-center transition-colors",
+          isDragging ? "border-primary bg-primary-muted" : file ? "border-success/30 bg-success-muted" : "border-border",
+        )}
+      >
+        <input ref={fileInputRef} type="file" accept={UPLOAD_EXTENSIONS.join(",")} className="hidden"
+          onChange={(e) => { acceptFile(e.target.files?.[0]); e.target.value = ""; }} />
+        {file ? (
           <>
-            <p className="text-sm font-medium text">{fileName}</p>
-            <p className="text-xs text-text-tertiary mt-0.5">Ready for processing</p>
-            <button onClick={() => { setFileName(null); setBatchResult(null); }} className="text-xs text-text-tertiary hover:text-text mt-2">Change file</button>
+            <p className="text-sm font-medium text-text">{file.name}</p>
+            <p className="mt-0.5 text-xs text-text-tertiary">{formatBytes(file.size)} · Ready to process</p>
+            <button onClick={reset} disabled={isProcessing} className="btn btn-ghost btn-sm mt-2">Change file</button>
           </>
         ) : (
           <>
-            <p className="text-sm font-medium text">Upload prediction data</p>
-            <p className="mt-0.5 text-xs text-text-tertiary">CSV, JSONL, or Parquet — up to 500 MB</p>
-            <input ref={fileInputRef} type="file" accept=".csv,.jsonl,.parquet" onChange={handleFileChange} className="hidden" />
-            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary mt-3 text-xs">Browse Files</button>
+            <p className="text-sm font-medium text-text">Drop a file here, or browse</p>
+            <p className="mt-0.5 text-xs text-text-tertiary">CSV, JSONL or Parquet, up to {formatBytes(MAX_UPLOAD_BYTES)}. The file stays in your browser.</p>
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary btn-sm mt-3">Browse files</button>
           </>
         )}
       </div>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
-      {fileName && !batchResult && (
-        <button onClick={handleProcess} disabled={isProcessing} className="btn btn-primary w-full py-2.5">
-          {isProcessing ? `Processing… ${progress.toFixed(0)}%` : "Run Batch Prediction"}
+      {file && !batchResult && (
+        <button onClick={handleProcess} disabled={isProcessing} className="btn btn-primary w-full">
+          {isProcessing ? `Processing… ${progress.toFixed(0)}%` : "Run simulated batch"}
         </button>
       )}
 
       {isProcessing && (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3" role="progressbar"
+          aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
       )}
 
       {batchResult && (
-        <div className="space-y-4 animate-in fade-in duration-300">
-          <div className="rounded-lg border border-success/20 bg-success-muted/30 p-5">
-            <h3 className="text-sm font-semibold text">Batch Complete</h3>
-            <p className="text-xs text-text-tertiary mt-0.5">Processed at {batchResult.processedAt}</p>
-            <div className="grid gap-3 sm:grid-cols-4 mt-4">
-              {[
-                { label: "Total", value: batchResult.total.toLocaleString() },
-                { label: "Positive", value: batchResult.positive.toLocaleString() },
-                { label: "Negative", value: batchResult.negative.toLocaleString() },
-                { label: "Avg Confidence", value: `${(batchResult.avgConfidence * 100).toFixed(1)}%` },
-              ].map((s) => (
-                <div key={s.label} className="rounded-md bg-surface p-3 border border-border-subtle text-center">
-                  <p className="text-lg font-semibold font-mono">{s.value}</p>
-                  <p className="text-[10px] text-text-tertiary uppercase tracking-wider mt-0.5">{s.label}</p>
-                </div>
-              ))}
-            </div>
+        <div className="rounded-lg border border-border bg-surface-2 p-5">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text">Batch summary</h3>
+            <SimulatedBadge />
           </div>
-          <div className="flex gap-2">
-            <button className="btn btn-primary flex-1">Download Results</button>
-            <button className="btn btn-secondary flex-1">View Details</button>
+          <p className="mt-0.5 text-xs text-text-tertiary">
+            Generated {formatDateTime(batchResult.processedAt)}. Counts are made up for this preview, not read from your file.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            {[
+              { label: "Total rows", value: formatCount(batchResult.total) },
+              { label: "Positive", value: formatCount(batchResult.positive) },
+              { label: "Negative", value: formatCount(batchResult.negative) },
+              { label: "Avg confidence", value: `${(batchResult.avgConfidence * 100).toFixed(1)}%` },
+            ].map((s) => (
+              <div key={s.label} className="rounded-md border border-border-subtle bg-surface p-3 text-center">
+                <p className="font-mono text-lg font-semibold text-text">{s.value}</p>
+                <p className="mt-0.5 text-xs text-text-tertiary">{s.label}</p>
+              </div>
+            ))}
           </div>
+          <button onClick={reset} className="btn btn-secondary btn-sm mt-4">Start over</button>
         </div>
       )}
     </div>
@@ -384,103 +450,38 @@ function BatchTab({ model }: { model: ModelInfo | null }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  API Tab                                                            */
+/*  History Tab (this session only)                                    */
 /* ------------------------------------------------------------------ */
-function APITab({ model }: { model: ModelInfo | null }) {
-  const [copied, setCopied] = useState<string | null>(null);
-
-  if (!model) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <h3 className="text-sm font-semibold text">Select a Model</h3>
-        <p className="mt-1 text-xs text-text-tertiary">Choose a model to see its API endpoint.</p>
-      </div>
-    );
-  }
-
-  const endpoint = `https://api.Kadence.com/v1/predict/${model.id}`;
-
-  const curlExample = `curl -X POST "${endpoint}" \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -d '{"features": {"age": 35, "income": 52000}}'`;
-
-  const pythonExample = `import requests
-
-response = requests.post(
-    "${endpoint}",
-    headers={"Authorization": "Bearer YOUR_API_KEY"},
-    json={"features": {"age": 35, "income": 52000}}
-)
-print(response.json())`;
-
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
-        <p className="section-label">Endpoint</p>
-        <div className="flex items-center gap-2 rounded-lg border border-border-subtle bg-primary p-3">
-          <span className="rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">POST</span>
-          <code className="flex-1 truncate text-sm font-mono text-white/80">{endpoint}</code>
-          <button onClick={() => handleCopy(endpoint, "ep")} className="rounded-sm p-1.5 hover:bg-white/10 transition-colors">
-            <span className="text-xs text-white/50">{copied === "ep" ? "Copied" : "Copy"}</span>
-          </button>
-        </div>
-      </div>
-
-      {[{ id: "curl", label: "cURL", code: curlExample }, { id: "python", label: "Python", code: pythonExample }].map((ex) => (
-        <div key={ex.id} className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <p className="section-label">{ex.label}</p>
-            <button onClick={() => handleCopy(ex.code, ex.id)} className="text-xs text-text-tertiary hover:text-text transition-colors">
-              {copied === ex.id ? "Copied" : "Copy"}
-            </button>
-          </div>
-          <div className="rounded-lg border border-border-subtle overflow-hidden">
-            <div className="bg-primary px-4 py-1.5 border-b border-white/10">
-              <span className="text-[11px] text-white/30">{ex.label.toLowerCase()}</span>
-            </div>
-            <pre className="bg-primary p-4 text-xs text-white/60 overflow-x-auto leading-relaxed">
-              <code>{ex.code}</code>
-            </pre>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  History Tab                                                        */
-/* ------------------------------------------------------------------ */
-function HistoryTab() {
+function HistoryTab({ items, onClear }: { items: HistoryItem[]; onClear: () => void }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="section-label">Recent Predictions</p>
-        <button className="text-xs text-text-tertiary hover:text-text transition-colors">Clear</button>
+        <p className="section-label">Predictions this session</p>
+        {items.length > 0 && <button onClick={onClear} className="btn btn-ghost btn-sm">Clear</button>}
       </div>
-      <div className="space-y-1.5">
-        {mockHistory.map((item) => (
-          <div key={item.id} className="flex items-center justify-between rounded-lg border border-border-subtle p-3 hover:bg-surface-2/50 transition-colors">
-            <div>
-              <p className="text-[13px] font-medium text">{item.model}</p>
-              <p className="text-[11px] text-text-tertiary font-mono">{item.input}</p>
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-border-subtle p-10 text-center">
+          <p className="text-sm text-text-secondary">Nothing here yet</p>
+          <p className="mt-0.5 text-xs text-text-tertiary">Simulated predictions from the Playground tab appear here until you leave the page.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-text">{item.model}</p>
+                <p className="truncate font-mono text-xs text-text-tertiary">{item.input}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className={cn("text-sm font-medium", item.result === "Positive" ? "text-success" : "text-danger")}>
+                  {item.result} ({(item.confidence * 100).toFixed(0)}%)
+                </p>
+                <p className="text-xs text-text-tertiary">{formatDateTime(item.at)}</p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className={cn("text-[13px] font-medium", item.result === "Positive" ? "text-success" : "text-danger")}>
-                {item.result} ({(item.confidence * 100).toFixed(0)}%)
-              </p>
-              <p className="text-[11px] text-text-tertiary">{item.time}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -488,123 +489,137 @@ function HistoryTab() {
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
+const TABS: { key: PredictionTab; label: string }[] = [
+  { key: "playground", label: "Playground" },
+  { key: "batch", label: "Batch" },
+  { key: "history", label: "History" },
+];
+
 export function MLPredictionPage() {
   const navigate = useNavigate();
-  const [selectedModelId, setSelectedModelId] = useState<string | null>("m-1");
+  const [selectedModelId, setSelectedModelId] = useState(sampleModels[0].id);
   const [activeTab, setActiveTab] = useState<PredictionTab>("playground");
   const [isPredicting, setIsPredicting] = useState(false);
   const [predictionResult, setPredictionResult] = useState<PredictionResult | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const predictTimer = useRef<number | null>(null);
 
-  const selectedModel = mockModels.find((m) => m.id === selectedModelId) || null;
-
-  const handlePredict = useCallback((_inputs: Record<string, string>) => {
-    setIsPredicting(true);
-    setPredictionResult(null);
-    setTimeout(() => {
-      const isPositive = Math.random() > 0.4;
-      const conf = 0.75 + Math.random() * 0.2;
-      setPredictionResult({
-        value: isPositive ? "Positive" : "Negative",
-        confidence: conf,
-        probabilities: [
-          { label: "Positive", prob: isPositive ? conf : 1 - conf },
-          { label: "Negative", prob: isPositive ? 1 - conf : conf },
-        ],
-        latency: Math.floor(Math.random() * 15 + 5),
-      });
-      setIsPredicting(false);
-    }, 1200);
+  useEffect(() => () => {
+    if (predictTimer.current !== null) window.clearTimeout(predictTimer.current);
   }, []);
 
-  const TABS: { key: PredictionTab; label: string }[] = [
-    { key: "playground", label: "Playground" },
-    { key: "batch", label: "Batch" },
-    { key: "api", label: "API" },
-    { key: "history", label: "History" },
-  ];
+  const selectedModel = sampleModels.find((m) => m.id === selectedModelId) ?? sampleModels[0];
+
+  const selectModel = (id: string) => {
+    if (predictTimer.current !== null) window.clearTimeout(predictTimer.current);
+    setIsPredicting(false);
+    setSelectedModelId(id);
+    setPredictionResult(null);
+  };
+
+  const handlePredict = (inputs: Record<string, string>) => {
+    const model = selectedModel;
+    setIsPredicting(true);
+    setPredictionResult(null);
+    predictTimer.current = window.setTimeout(() => {
+      predictTimer.current = null;
+      const result = simulatePrediction(model, inputs);
+      setPredictionResult(result);
+      setIsPredicting(false);
+      setHistory((prev) => [{
+        id: `p-${Date.now()}`,
+        model: model.name,
+        input: model.features.slice(0, 3).map((f) => `${f}=${inputs[f]}`).join(", "),
+        result: result.value,
+        confidence: result.confidence,
+        at: new Date().toISOString(),
+      }, ...prev]);
+    }, 800);
+  };
+
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const i = TABS.findIndex((t) => t.key === activeTab);
+    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const key = TABS[(next + TABS.length) % TABS.length].key;
+    setActiveTab(key);
+    document.getElementById(`pred-tab-${key}`)?.focus();
+  };
 
   return (
-    <section className="animate-in fade-in duration-200">
+    <section>
       <PageHeader
-        title="Model Prediction"
-        subtitle="Run inference, test models, and integrate via API."
-        actions={
-          <div className="flex items-center gap-2">
-            <button onClick={() => navigate("/ml-training")} className="btn btn-secondary text-[13px]">Train New Model</button>
-            <button className="btn btn-secondary text-[13px]">Export</button>
-          </div>
-        }
+        title="Predictions"
+        subtitle="Try a model on a single record or a file of records."
+        actions={<button onClick={() => navigate("/app/ml-training")} className="btn btn-secondary">Train a model</button>}
       />
+      <PreviewNotice>
+        The models, predictions and batch results on this page are simulated. The same inputs always give the same output, but nothing is scored by a real model.
+      </PreviewNotice>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr] p-6">
-        {/* Model Sidebar */}
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <div className="space-y-4">
-          <div className="card p-3 space-y-2">
+          <div className="card space-y-2 p-3">
             <div className="flex items-center justify-between px-1">
-              <p className="section-label">Models</p>
-              <span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
-                {mockModels.filter((m) => m.status === "ready").length} ready
-              </span>
+              <p className="section-label">Sample models</p>
+              <SimulatedBadge />
             </div>
             <div className="space-y-1.5">
-              {mockModels.map((model) => (
+              {sampleModels.map((model) => (
                 <ModelCard key={model.id} model={model} isSelected={selectedModelId === model.id}
-                  onSelect={() => { setSelectedModelId(model.id); setPredictionResult(null); }} />
+                  onSelect={() => selectModel(model.id)} />
               ))}
             </div>
           </div>
 
-          {selectedModel && (
-            <div className="card p-3 space-y-2">
-              <p className="section-label px-1">Details</p>
-              <div className="space-y-1.5 text-xs px-1">
-                {[
-                  { label: "Algorithm", value: selectedModel.algorithm },
-                  { label: "Version", value: `v${selectedModel.version}` },
-                  { label: "Created", value: selectedModel.createdAt },
-                  { label: "Features", value: `${selectedModel.features.length} inputs` },
-                  { label: "Latency", value: selectedModel.latency },
-                  { label: "Size", value: selectedModel.size },
-                ].map((item) => (
-                  <div key={item.label} className="flex justify-between">
-                    <span className="text-text-tertiary">{item.label}</span>
-                    <span className="font-medium">{item.value}</span>
-                  </div>
+          <div className="card space-y-2 p-3">
+            <p className="section-label px-1">Details</p>
+            <div className="space-y-1.5 px-1 text-xs">
+              {[
+                { label: "Algorithm", value: selectedModel.algorithm },
+                { label: "Version", value: `v${selectedModel.version}` },
+                { label: "Created", value: formatDate(selectedModel.createdAt) },
+                { label: "Features", value: `${selectedModel.features.length} inputs` },
+              ].map((item) => (
+                <div key={item.label} className="flex justify-between">
+                  <span className="text-text-tertiary">{item.label}</span>
+                  <span className="font-medium text-text">{item.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-border-subtle px-1 pt-2">
+              <p className="section-label mb-1.5">Features</p>
+              <div className="flex flex-wrap gap-1">
+                {selectedModel.features.map((f) => (
+                  <span key={f} className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-2xs font-medium text-text-secondary">{f}</span>
                 ))}
               </div>
-              <div className="pt-2 border-t border-border-subtle px-1">
-                <p className="section-label mb-1.5">Features</p>
-                <div className="flex flex-wrap gap-1">
-                  {selectedModel.features.map((f) => (
-                    <span key={f} className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">{f}</span>
-                  ))}
-                </div>
-              </div>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Main */}
-        <div className="space-y-4">
-          <div className="card overflow-hidden">
-            <div className="border-b border-border-subtle px-1.5 py-1.5">
-              <div className="flex rounded-md bg-surface-2/50 p-0.5">
-                {TABS.map((tab) => (
-                  <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                    className={cn("flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all",
-                      activeTab === tab.key ? "bg-surface text-text shadow-xs" : "text-text-tertiary hover:text-text-secondary"
-                    )}>{tab.label}</button>
-                ))}
-              </div>
+        <div className="card overflow-hidden">
+          <div className="border-b border-border-subtle p-1.5">
+            <div role="tablist" aria-label="Prediction modes" className="flex rounded-md bg-surface-2 p-0.5">
+              {TABS.map((tab) => (
+                <button key={tab.key} role="tab" id={`pred-tab-${tab.key}`}
+                  aria-selected={activeTab === tab.key} aria-controls={`pred-panel-${tab.key}`}
+                  tabIndex={activeTab === tab.key ? 0 : -1}
+                  onClick={() => setActiveTab(tab.key)} onKeyDown={onTabKeyDown}
+                  className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    activeTab === tab.key ? "bg-surface text-text shadow-xs" : "text-text-tertiary hover:text-text-secondary")}>
+                  {tab.label}
+                </button>
+              ))}
             </div>
-            <div className="p-5">
-              {activeTab === "playground" && (
-                <PlaygroundTab model={selectedModel} onPredict={handlePredict} isPredicting={isPredicting} result={predictionResult} />
-              )}
-              {activeTab === "batch" && <BatchTab model={selectedModel} />}
-              {activeTab === "api" && <APITab model={selectedModel} />}
-              {activeTab === "history" && <HistoryTab />}
-            </div>
+          </div>
+          <div className="p-5" role="tabpanel" id={`pred-panel-${activeTab}`} aria-labelledby={`pred-tab-${activeTab}`}>
+            {activeTab === "playground" && (
+              <PlaygroundTab model={selectedModel} onPredict={handlePredict} isPredicting={isPredicting} result={predictionResult} />
+            )}
+            {activeTab === "batch" && <BatchTab key={selectedModel.id} model={selectedModel} />}
+            {activeTab === "history" && <HistoryTab items={history} onClear={() => setHistory([])} />}
           </div>
         </div>
       </div>
