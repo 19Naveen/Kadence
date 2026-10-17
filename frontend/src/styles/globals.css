@@ -27,16 +27,16 @@
   --color-info: hsl(var(--info));
   --color-info-muted: hsl(var(--info-muted));
 
-  --font-sans: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
-  --font-heading: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", Menlo, Monaco, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-2xs--letter-spacing: 0.01em;
 
-  --shadow-soft-lg: 0 16px 48px -16px rgba(16, 24, 40, 0.18);
-  --shadow-soft-md: 0 8px 24px -10px rgba(16, 24, 40, 0.12);
+  --shadow-soft-lg: 0 12px 32px -12px rgba(16, 16, 24, 0.22), 0 0 0 1px rgba(16, 16, 24, 0.04);
+  --shadow-soft-md: 0 4px 12px -4px rgba(16, 16, 24, 0.14);
   --shadow-soft-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-inner-soft: inset 0 1px 2px rgba(16, 24, 40, 0.04);
 
@@ -65,7 +65,7 @@
 /* ── Components ─────────────────────────────────────────────────────────────── */
 
 @utility card {
-  @apply bg-surface rounded-xl border border-border p-5;
+  @apply bg-surface rounded-lg border border-border p-5;
 }
 
 @utility card-hover {
@@ -73,13 +73,13 @@
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 h-9 px-3.5 text-sm font-semibold rounded-lg whitespace-nowrap select-none;
+  @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 text-[13px] font-medium rounded-md whitespace-nowrap select-none;
   @apply transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
   @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
 }
 
 @utility btn-sm {
-  @apply h-8 px-2.5 text-[13px] gap-1.5;
+  @apply h-7 px-2 text-[12.5px] gap-1;
 }
 
 @utility btn-primary {
@@ -99,20 +99,20 @@
 }
 
 @utility btn-icon {
-  @apply inline-flex items-center justify-center size-8 rounded-lg text-text-secondary transition-colors;
+  @apply inline-flex items-center justify-center size-8 rounded-md text-text-secondary transition-colors;
   @apply hover:bg-surface-2 hover:text-text disabled:opacity-40 disabled:pointer-events-none;
   @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
 }
 
 @utility input {
-  @apply w-full h-9 px-3 text-sm bg-surface text-text border border-border rounded-lg transition-colors duration-150;
+  @apply w-full h-8 px-2.5 text-[13px] bg-surface text-text border border-border rounded-md transition-colors duration-150;
   @apply placeholder:text-text-tertiary;
   @apply focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15;
   @apply disabled:opacity-60 disabled:cursor-not-allowed;
 }
 
 @utility field-label {
-  @apply block text-[13px] font-semibold text-text mb-1.5;
+  @apply block text-[13px] font-medium text-text mb-1;
 }
 
 @utility field-hint {
@@ -124,11 +124,11 @@
 }
 
 @utility badge {
-  @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-4;
+  @apply inline-flex items-center gap-1 rounded px-1.5 py-px text-[11px] font-medium leading-4;
 }
 
 @utility section-label {
-  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary;
+  @apply text-xs font-medium text-text-tertiary;
 }
 
 @utility kbd {
@@ -157,7 +157,7 @@
 
   body {
     @apply bg-bg text-text font-sans antialiased;
-    font-feature-settings: "ss01";
+    font-size: 14px;
   }
 
   :focus-visible {
@@ -179,10 +179,8 @@
     @apply font-sans font-semibold tracking-tight;
   }
 
-  /* The display face is used with restraint: page titles only. */
   h1 {
-    @apply font-heading;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
   }
 
   code,

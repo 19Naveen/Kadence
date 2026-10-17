@@ -1,65 +1,69 @@
 :root {
-  /* Kadence palette — cool neutral canvas, ink text, one lagoon teal for actions,
-     and marigold reserved for one job: showing how data changed. */
-  --bg: 220 14% 96%;            /* canvas  #F4F5F7 */
-  --surface: 0 0% 100%;
-  --surface-2: 216 15% 94%;     /* #EEF0F3 */
-  --surface-3: 218 17% 91%;     /* #E4E7EC */
+  /* Kadence "workbench" palette: neutral surfaces, ink text, one blue for interaction,
+     amber only where data changed. Quiet by default so the data is the loudest thing. */
+  --bg: 240 11% 98%;            /* app canvas   #FAFAFB */
+  --surface: 0 0% 100%;         /* panels, grid #FFFFFF */
+  --surface-2: 240 5% 96%;      /* sidebar, wells #F4F4F5 */
+  --surface-3: 240 5% 92%;      /* hover/active  #E9E9EC */
 
-  --border: 223 13% 90%;        /* #E2E4E9 */
-  --border-subtle: 216 13% 94%; /* #ECEEF1 */
+  --border: 240 6% 90%;         /* #E4E4E7 */
+  --border-subtle: 240 5% 94%;  /* #EFEFF1 */
 
-  --text: 223 14% 10%;          /* ink #15171C */
-  --text-secondary: 221 8% 37%; /* #565B66 */
-  --text-tertiary: 220 7% 57%;  /* #8A8F99 */
+  --text: 240 6% 10%;           /* ink #18181B */
+  --text-secondary: 240 4% 34%; /* #52525B */
+  --text-tertiary: 240 3% 56%;  /* #8B8B93 */
 
-  /* Primary: lagoon teal #0B6E69 (primary-light is its pressed/hover shade) */
-  --primary: 177 82% 24%;
-  --primary-light: 177 82% 19%;
-  --primary-muted: 170 33% 92%;
+  /* Primary: blue #2156D9 — buttons, selection, focus, links (primary-light = hover) */
+  --primary: 222 73% 49%;
+  --primary-light: 222 73% 42%;
+  --primary-muted: 222 85% 96%;
 
-  /* Accent follows primary so links and focus rings stay one colour */
-  --accent: 177 82% 24%;
-  --accent-light: 170 33% 92%;
+  --accent: 222 73% 49%;
+  --accent-light: 222 85% 96%;
 
-  /* Signal: marigold #C7791A — row/column deltas and "look here" moments only */
-  --signal: 33 77% 44%;
-  --signal-muted: 36 82% 93%;
+  /* Signal: amber — only for "this changed": removed rows, new columns, previews */
+  --signal: 33 86% 38%;
+  --signal-muted: 36 86% 94%;
 
-  /* Semantic */
-  --success: 139 47% 33%;
-  --success-muted: 135 33% 93%;
-  --warning: 36 71% 42%;
-  --warning-muted: 40 80% 93%;
-  --danger: 6 62% 45%;
-  --danger-muted: 8 70% 95%;
-  --info: 208 56% 42%;
-  --info-muted: 208 55% 94%;
+  --success: 152 62% 31%;
+  --success-muted: 145 45% 94%;
+  --warning: 35 100% 33%;
+  --warning-muted: 40 90% 93%;
+  --danger: 5 62% 47%;
+  --danger-muted: 6 75% 96%;
+  --info: 222 73% 49%;
+  --info-muted: 222 85% 96%;
 
-  --sidebar-w: 240px;
-  --header-h: 56px;
+  --sidebar-w: 248px;
+  --sidebar-rail: 52px;
+  --header-h: 48px;
 }
 
 [data-theme='dark'] {
-  --bg: 216 14% 7%;
-  --surface: 216 15% 10%;
-  --surface-2: 216 14% 13%;
-  --surface-3: 216 13% 17%;
+  --bg: 240 6% 7%;
+  --surface: 240 5% 10%;
+  --surface-2: 240 5% 12%;
+  --surface-3: 240 4% 17%;
 
-  --border: 216 12% 18%;
-  --border-subtle: 216 13% 14%;
+  --border: 240 4% 19%;
+  --border-subtle: 240 4% 14%;
 
-  --text: 220 17% 93%;
-  --text-secondary: 219 9% 67%;
-  --text-tertiary: 219 7% 46%;
+  --text: 240 5% 93%;
+  --text-secondary: 240 4% 68%;
+  --text-tertiary: 240 3% 48%;
 
-  --primary: 174 51% 47%;
-  --primary-light: 174 51% 56%;
-  --primary-muted: 177 40% 14%;
+  --primary: 220 90% 64%;
+  --primary-light: 220 90% 72%;
+  --primary-muted: 222 40% 18%;
 
-  --accent: 174 51% 47%;
-  --accent-light: 177 40% 14%;
+  --accent: 220 90% 64%;
+  --accent-light: 222 40% 18%;
 
-  --signal: 35 71% 58%;
-  --signal-muted: 33 45% 15%;
+  --signal: 36 80% 58%;
+  --signal-muted: 33 40% 16%;
+
+  --success-muted: 150 30% 14%;
+  --warning-muted: 36 40% 15%;
+  --danger-muted: 5 35% 16%;
+  --info-muted: 222 40% 18%;
 }
