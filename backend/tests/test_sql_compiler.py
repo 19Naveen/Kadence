@@ -182,6 +182,43 @@ def test_rename_then_old_name_is_passthrough_new_name_works():
     assert sql.count("upper(") == 1
 
 
+def test_select_closes_world():
+    sql = _compile([
+        {"type": "select", "columns": ["b", "a"]},
+        {"type": "upper", "column": "c"},          # not selected -> pass-through
+        {"type": "upper", "column": "a"},
+    ])
+    assert '__s1 AS (SELECT "b", "a" FROM __s0)' in sql
+    assert "__s2 AS (SELECT * FROM __s1)" in sql
+    assert sql.count("upper(") == 1
+
+
+def test_group_closes_world_to_by_and_result():
+    sql = _compile([
+        {"type": "group", "by": "k", "agg": "sum", "column": "v"},
+        {"type": "abs", "column": "v"},            # gone after group
+        {"type": "abs", "column": "sum_v"},
+    ])
+    assert 'GROUP BY "k" ORDER BY "k" NULLS LAST' in sql
+    assert 'sum(TRY_CAST("v" AS DOUBLE)) AS "sum_v"' in sql
+    assert sql.count("abs(") == 1
+
+
+def test_sort_nulls_last():
+    sql = _compile([{"type": "sort", "column": "a", "direction": "desc"}])
+    assert 'ORDER BY "a" DESC NULLS LAST' in sql
+
+
+def test_calc_divide_uses_nullif():
+    sql = _compile([{"type": "calc", "column": "a", "op": "divide", "column2": "b", "to": "r"}])
+    assert 'NULLIF(TRY_CAST("b" AS DOUBLE), 0) AS "r"' in sql
+
+
+def test_filter_text_ops_escape_value():
+    sql = _compile([{"type": "filter", "column": "a", "op": "in", "value": "x', y"}])
+    assert "lower('x''')" in sql and "lower('y')" in sql
+
+
 # ---------------------------------------------------------------------------
 # Escaping / injection
 # ---------------------------------------------------------------------------

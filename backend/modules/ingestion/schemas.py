@@ -165,7 +165,8 @@ class TransformPreviewResponse(BaseModel):
 
 
 class LineageSource(BaseModel):
-    """One immediate join edge feeding into a dataset's latest version."""
+    """One immediate join / append edge feeding into a dataset's latest version
+    (append edges: how="append", empty left_on / right_on)."""
     dataset_id: uuid.UUID
     dataset_name: str
     how: str

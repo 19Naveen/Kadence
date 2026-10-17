@@ -190,6 +190,43 @@ def test_lineage_returns_join_sources_from_latest_success_job(monkeypatch):
     assert resp.sources[0].how == "left"
 
 
+def test_lineage_includes_append_sources(monkeypatch):
+    dataset_id = uuid.uuid4()
+    src_id = uuid.uuid4()
+    dataset = SimpleNamespace(id=dataset_id, workspace_id=uuid.uuid4(), name="all", source_type="csv")
+    src = SimpleNamespace(id=src_id, workspace_id=uuid.uuid4(), name="march")
+    job = SimpleNamespace(source_config={"_transforms": [{"type": "append", "dataset_id": str(src_id)}]})
+
+    monkeypatch.setattr(router_mod, "assert_dataset_owned", lambda db, did, owner_id: dataset)
+    monkeypatch.setattr(repo, "get_latest_version", lambda db, did: None)
+    monkeypatch.setattr(repo, "get_latest_success_job", lambda db, did: job)
+    monkeypatch.setattr(repo, "get_first_success_job", lambda db, did: job)
+    monkeypatch.setattr(repo, "get_dataset", lambda db, did: src if did == src_id else None)
+
+    resp = anyio.run(router_mod.get_dataset_lineage, dataset_id, None, {"sub": "u1"})
+
+    assert [(s.dataset_name, s.how, s.left_on, s.right_on) for s in resp.sources] == [("march", "append", "", "")]
+
+
+def test_resolve_join_sources_covers_append(monkeypatch):
+    # append steps go through the same ownership-checked resolution as joins.
+    dataset_id = uuid.uuid4()
+    dataset = SimpleNamespace(id=dataset_id, workspace_id=uuid.uuid4())
+    monkeypatch.setattr(repo, "get_dataset", lambda db, did: dataset)
+    monkeypatch.setattr(auth_mod, "get_workspace", lambda db, wid, owner_id: None)
+    with pytest.raises(HTTPException) as exc:
+        service_mod.resolve_join_sources(
+            db=None, steps=[{"type": "append", "dataset_id": str(dataset_id)}], owner_id="someone-else",
+        )
+    assert exc.value.status_code == 404
+
+    monkeypatch.setattr(auth_mod, "get_workspace", lambda db, wid, owner_id: SimpleNamespace(id=wid))
+    monkeypatch.setattr(repo, "get_latest_version", lambda db, did: SimpleNamespace(storage_path="p/v1.parquet"))
+    assert service_mod.resolve_join_sources(
+        db=None, steps=[{"type": "append", "dataset_id": str(dataset_id)}], owner_id="u1",
+    ) == {str(dataset_id): "p/v1.parquet"}
+
+
 def test_lineage_no_joins_returns_empty_sources(monkeypatch):
     dataset_id = uuid.uuid4()
     dataset = SimpleNamespace(id=dataset_id, workspace_id=uuid.uuid4(), name="plain", source_type="csv")

@@ -20,7 +20,16 @@ Documented deliberate divergences (each has a targeted test below):
    yields NULL.
 6. Missing *source* column — pandas silently skips the step; the compiler can
    only skip columns removed by earlier steps, an unknown source column is a
-   runtime binder error (mapped to TransformStepError by the task).
+   runtime binder error (mapped to TransformStepError by the task). After a
+   `select` / `group` the compiler is closed-world and skips like pandas.
+7. `sort` — pandas is stable on ties, DuckDB tie order is unspecified; DuckDB
+   keeps the order through later projection/filter steps but not through
+   joins, aggregations, DISTINCT or window functions.
+8. `append` — DuckDB `UNION ALL BY NAME` row order is not guaranteed, and
+   incompatible column types across the two sides error in DuckDB where
+   pandas falls back to object.
+9. `filter` comparisons with a non-numeric string on a numeric column — pandas
+   matches nothing (eq) / raises (lt…), DuckDB raises a conversion error.
 """
 
 import uuid
@@ -151,6 +160,30 @@ def test_cast_divergence_bad_values():
     assert [None if pd.isna(v) else v for v in run_duckdb(df, steps)["a"]] == [1, None, 3]
 
 
+def test_select_keeps_order():
+    result = normalize(run_pandas(fixture_df(), [{"type": "select", "columns": ["ints", "name"]}]))
+    assert list(result.columns) == ["ints", "name"]
+    assert_parity([{"type": "select", "columns": ["ints", "name"]}])
+
+
+def test_select_skips_removed_column():
+    assert_parity([
+        {"type": "drop", "column": "city"},
+        {"type": "select", "columns": ["city", "floats"]},
+    ])
+
+
+def test_select_closed_world_later_step_on_unselected_column_skipped():
+    steps = [
+        {"type": "select", "columns": ["name", "ints"]},
+        {"type": "upper", "column": "city"},         # not selected → skipped
+        {"type": "filter", "column": "floats", "op": "isnull"},  # skipped too
+        {"type": "duplicate", "column": "ints"},     # selected → applies
+    ]
+    assert_parity(steps)
+    assert list(run_duckdb(fixture_df(), steps).columns) == ["name", "ints", "ints_copy"]
+
+
 def test_duplicate():
     assert_parity([{"type": "duplicate", "column": "ints"}])
 
@@ -184,6 +217,55 @@ def test_filter_isnull_notnull():
 
 def test_filter_string_value():
     assert_parity([{"type": "filter", "column": "city", "op": "eq", "value": "LA"}])
+
+
+def test_filter_legacy_labels_normalized():
+    # The catalog used to offer labels as op values; they map to the codes.
+    assert_parity([{"type": "filter", "column": "ints", "op": "greater than", "value": 1}])
+    assert_parity([{"type": "filter", "column": "floats", "op": "is not null"}])
+
+
+def test_filter_numeric_string_value_coerced():
+    # The UI sends value as a string: "2" must match the int 2 in both engines.
+    for op, v in (("eq", "2"), ("ne", "2"), ("lt", "2.5"), ("ge", "2")):
+        result = run_pandas(fixture_df(), [{"type": "filter", "column": "ints", "op": op, "value": v}])
+        assert len(result) > 0
+        assert_parity([{"type": "filter", "column": "ints", "op": op, "value": v}])
+
+
+@pytest.mark.parametrize("op,value", [
+    ("contains", "LI"), ("contains", "'"), ("not_contains", "a"),
+    ("starts_with", "BOB"), ("ends_with", "TAL"), ("in", "la, Paris ,nowhere"),
+])
+def test_filter_text_ops_case_insensitive_null_never_matches(op, value):
+    col = "city" if op == "in" else "name"
+    assert_parity([{"type": "filter", "column": col, "op": op, "value": value}])
+
+
+def test_filter_text_ops_on_numeric_column():
+    assert_parity([{"type": "filter", "column": "ints", "op": "in", "value": "2,10"}])
+    assert_parity([{"type": "filter", "column": "floats", "op": "contains", "value": ".2"}])
+
+
+def test_filter_not_contains_drops_nulls():
+    result = run_pandas(fixture_df(), [{"type": "filter", "column": "name", "op": "not_contains", "value": "zzz"}])
+    assert len(result) == 4  # the None name is excluded
+
+
+@pytest.mark.parametrize("direction", ["asc", "desc"])
+def test_sort_nulls_last_exact_order(direction):
+    # sort is the last step and parity compares row order exactly (no re-sort).
+    for col in ("floats", "name"):
+        steps = [{"type": "sort", "column": col, "direction": direction}]
+        assert_parity(steps)
+        assert run_duckdb(fixture_df(), steps)[col].isna().tolist()[-1]
+
+
+def test_sort_order_survives_later_filter():
+    assert_parity([
+        {"type": "sort", "column": "floats", "direction": "desc"},
+        {"type": "filter", "column": "ints", "op": "gt", "value": 0},
+    ])
 
 
 def test_dropnulls():
@@ -334,6 +416,63 @@ def test_zscore_zero_variance_divergence():
     assert run_duckdb(df, steps)["a"].isna().all()
 
 
+@pytest.mark.parametrize("op", ["add", "subtract", "multiply", "divide"])
+def test_calc(op):
+    assert_parity([{"type": "calc", "column": "floats", "op": op, "column2": "ints", "to": "total"}])
+
+
+def test_calc_divide_by_zero_is_null():
+    df = pd.DataFrame({"a": [1.0, 0.0, -2.0, None], "b": [0, 0, 0, 1]})
+    steps = [{"type": "calc", "column": "a", "op": "divide", "column2": "b", "to": "r"}]
+    assert_parity(steps, df=df)
+    assert run_pandas(df, steps)["r"].isna().all()
+
+
+def test_calc_replaces_existing_selected_column():
+    # After select the column set is known, so `to` naming a live column replaces it.
+    assert_parity([
+        {"type": "select", "columns": ["ints", "floats"]},
+        {"type": "calc", "column": "ints", "op": "add", "column2": "ints", "to": "floats"},
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Summarize
+# ---------------------------------------------------------------------------
+
+
+def _group_df() -> pd.DataFrame:
+    return pd.DataFrame({
+        "k": ["b", "a", None, "b", "a", None, "c"],
+        "v": [1.0, 2.0, 3.0, None, 2.0, 5.0, None],
+        "s": ["x", "y", "x", "x", None, "z", None],
+    })
+
+
+@pytest.mark.parametrize("agg", ["count", "sum", "avg", "min", "max", "count_distinct"])
+def test_group_every_agg_with_null_key(agg):
+    df = _group_df()
+    steps = [{"type": "group", "by": "k", "agg": agg, "column": "v"}]
+    assert_parity(steps, df=df)
+    result = run_pandas(df, steps)
+    expected_to = "count" if agg == "count" else f"{agg}_v"
+    assert list(result.columns) == ["k", expected_to]
+    assert result["k"].tolist()[:3] == ["a", "b", "c"] and pd.isna(result["k"].iloc[-1])
+
+
+def test_group_min_max_on_text_and_custom_name():
+    assert_parity([{"type": "group", "by": "k", "agg": "max", "column": "s", "to": "top"}], df=_group_df())
+
+
+def test_group_closed_world_and_blank_ui_fields():
+    steps = [
+        {"type": "group", "by": "k", "agg": "count", "column": "", "to": ""},
+        {"type": "upper", "column": "s"},              # gone after group → skipped
+        {"type": "filter", "column": "count", "op": "ge", "value": "2"},
+    ]
+    assert_parity(steps, df=_group_df())
+
+
 # ---------------------------------------------------------------------------
 # Date & Time
 # ---------------------------------------------------------------------------
@@ -412,7 +551,7 @@ def _assert_join_parity(steps, left, right, sort=True):
     try:
         con.register("__left", left)
         con.register("__right", right)
-        dataset_id = steps[0]["dataset_id"]
+        dataset_id = next(s["dataset_id"] for s in steps if "dataset_id" in s)
         sql = compile_plan(
             steps, "__left",
             join_sources={dataset_id: "__right"},
@@ -478,6 +617,38 @@ def test_join_missing_right_key_raises():
     steps = [{"type": "join", "dataset_id": dataset_id, "left_on": "id", "right_on": "nope", "how": "inner"}]
     with pytest.raises(TransformStepError):
         apply_transforms(_join_left(), steps, join_loader=lambda step: _join_right_same_key())
+
+
+def test_append_aligns_columns_by_name():
+    # Right has "val" (new, goes last) and lacks "name" (NULL-filled). Union row
+    # order isn't guaranteed in DuckDB, hence sort=True.
+    dataset_id = str(uuid.uuid4())
+    right = pd.DataFrame({"val": [10.0, 20.0], "id": [7, 8]})
+    result = _assert_join_parity([{"type": "append", "dataset_id": dataset_id}], _join_left(), right)
+    assert list(result.columns) == ["id", "name", "val"]
+    assert len(result) == 5
+
+
+def test_append_after_select_reopens_right_columns():
+    # select closes the column world; append adds the right side's columns back,
+    # so a later step on a right-only column applies in both engines.
+    dataset_id = str(uuid.uuid4())
+    steps = [
+        {"type": "select", "columns": ["id"]},
+        {"type": "append", "dataset_id": dataset_id},
+        {"type": "upper", "column": "val"},
+    ]
+    right = pd.DataFrame({"id": [9], "val": ["q"]})
+    result = _assert_join_parity(steps, _join_left(), right)
+    assert list(result.columns) == ["id", "val"]
+    assert result["val"].tolist()[-1] == "Q"
+
+
+def test_append_without_loader_raises():
+    from modules.ingestion.transforms import TransformStepError
+
+    with pytest.raises(TransformStepError):
+        apply_transforms(_join_left(), [{"type": "append", "dataset_id": str(uuid.uuid4())}])
 
 
 def test_join_without_loader_raises():

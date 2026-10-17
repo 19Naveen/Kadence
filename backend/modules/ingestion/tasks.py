@@ -90,11 +90,11 @@ def run_ingestion_pipeline(self, job_id: str):
         # Transform plan the user built in the import wizard (Pipeline Studio).
         transforms = (job.source_config or {}).get("_transforms") or []
 
-        # Re-resolve + re-authorize any join right datasets at run time (guards
-        # TOCTOU deletion since the commit endpoint authorized). Fails the job
-        # cleanly on a missing/unauthorized dataset.
+        # Re-resolve + re-authorize any other datasets (join / append steps) at run
+        # time (guards TOCTOU deletion since the commit endpoint authorized). Fails
+        # the job cleanly on a missing/unauthorized dataset.
         join_sources: dict[str, str] = {}
-        if any((s or {}).get("type") == "join" for s in transforms):
+        if any((s or {}).get("dataset_id") for s in transforms):
             from modules.ingestion.service import resolve_join_sources
             from modules.workspace.models import Workspace
             owner_id = (

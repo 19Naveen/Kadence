@@ -11,10 +11,11 @@ Public API:
 """
 
 import uuid
-from typing import Annotated, Any, Callable, Literal, Optional, Union
+from typing import Annotated, Any, Callable, Literal, Optional, Union, get_args
 
+import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
 # Canonical type → pandas dtype (mirrors schema_diff.CAST_TYPE_MAP).
 CAST_TYPE_MAP: dict[str, str] = {
@@ -55,6 +56,11 @@ class CastStep(BaseModel):
     to_type: Literal["string", "integer", "decimal", "boolean", "timestamp"]
 
 
+class SelectStep(BaseModel):
+    type: Literal["select"]
+    columns: list[str] = Field(min_length=1)
+
+
 class DuplicateStep(BaseModel):
     type: Literal["duplicate"]
     column: str
@@ -70,17 +76,39 @@ class MergeStep(BaseModel):
 
 # ── Rows ──
 
+# Legacy human-readable labels (the catalog once offered these as the op options).
+_FILTER_OP_LABELS = {
+    "equals": "eq", "not equals": "ne", "less than": "lt", "less or equal": "le",
+    "greater than": "gt", "greater or equal": "ge", "is null": "isnull",
+    "is not null": "notnull",
+}
+
+
 class FilterStep(BaseModel):
     type: Literal["filter"]
     column: str
-    op: Literal["eq", "ne", "lt", "le", "gt", "ge", "isnull", "notnull"]
+    op: Literal[
+        "eq", "ne", "lt", "le", "gt", "ge", "isnull", "notnull",
+        "contains", "not_contains", "starts_with", "ends_with", "in",
+    ]
     value: Any = None
+
+    @field_validator("op", mode="before")
+    @classmethod
+    def _normalize_op(cls, v):
+        return _FILTER_OP_LABELS.get(v, v) if isinstance(v, str) else v
 
     @model_validator(mode="after")
     def _require_value(self) -> "FilterStep":
         if self.op not in ("isnull", "notnull") and self.value is None:
             raise ValueError(f"filter op '{self.op}' requires a value")
         return self
+
+
+class SortStep(BaseModel):
+    type: Literal["sort"]
+    column: str
+    direction: Literal["asc", "desc"] = "asc"
 
 
 class DropnullsStep(BaseModel):
@@ -182,6 +210,37 @@ class ZscoreStep(BaseModel):
     column: str
 
 
+class CalcStep(BaseModel):
+    type: Literal["calc"]
+    column: str
+    op: Literal["add", "subtract", "multiply", "divide"]
+    column2: str
+    to: str = Field(min_length=1)
+
+
+# ── Summarize ──
+
+class GroupStep(BaseModel):
+    type: Literal["group"]
+    by: str
+    agg: Literal["count", "sum", "avg", "min", "max", "count_distinct"]
+    column: str | None = None
+    to: str | None = None
+
+    @field_validator("column", "to", mode="before")
+    @classmethod
+    def _blank_is_none(cls, v):
+        return None if v == "" else v  # the UI sends "" for untouched text fields
+
+    @model_validator(mode="after")
+    def _require_column(self) -> "GroupStep":
+        if self.agg != "count" and self.column is None:
+            raise ValueError(f"group agg '{self.agg}' requires a column")
+        if self.to is None:
+            self.to = "count" if self.agg == "count" else f"{self.agg}_{self.column}"
+        return self
+
+
 # ── Date & Time ──
 
 class DatepartStep(BaseModel):
@@ -200,16 +259,21 @@ class JoinStep(BaseModel):
     how: Literal["inner", "left", "right", "full"] = "inner"
 
 
+class AppendStep(BaseModel):
+    type: Literal["append"]
+    dataset_id: uuid.UUID
+
+
 # ── Union ──────────────────────────────────────────────────────────────────────
 
 TransformStep = Annotated[
     Union[
-        DropStep, RenameStep, CastStep, DuplicateStep, MergeStep,
-        FilterStep, DropnullsStep, DedupeStep, KeeptopStep, FillnaStep,
+        DropStep, RenameStep, CastStep, SelectStep, DuplicateStep, MergeStep,
+        FilterStep, SortStep, DropnullsStep, DedupeStep, KeeptopStep, FillnaStep,
         UpperStep, LowerStep, CapitalizeStep, TrimStep, ReplaceStep,
         SplitStep, ExtractStep, LengthStep,
-        RoundStep, AbsStep, MathStep, ZscoreStep,
-        DatepartStep, JoinStep,
+        RoundStep, AbsStep, MathStep, ZscoreStep, CalcStep,
+        GroupStep, DatepartStep, JoinStep, AppendStep,
     ],
     Field(discriminator="type"),
 ]
@@ -218,17 +282,18 @@ _STEP_ADAPTER: TypeAdapter = TypeAdapter(TransformStep)
 _PLAN_ADAPTER: TypeAdapter = TypeAdapter(list[TransformStep])
 
 _STEP_MODELS = (
-    DropStep, RenameStep, CastStep, DuplicateStep, MergeStep,
-    FilterStep, DropnullsStep, DedupeStep, KeeptopStep, FillnaStep,
+    DropStep, RenameStep, CastStep, SelectStep, DuplicateStep, MergeStep,
+    FilterStep, SortStep, DropnullsStep, DedupeStep, KeeptopStep, FillnaStep,
     UpperStep, LowerStep, CapitalizeStep, TrimStep, ReplaceStep,
     SplitStep, ExtractStep, LengthStep,
-    RoundStep, AbsStep, MathStep, ZscoreStep,
-    DatepartStep, JoinStep,
+    RoundStep, AbsStep, MathStep, ZscoreStep, CalcStep,
+    GroupStep, DatepartStep, JoinStep, AppendStep,
 )
 
 # ── Step type keys ─────────────────────────────────────────────────────────────
 
-STEP_TYPES: dict[str, type[BaseModel]] = {m.model_fields["type"].default: m for m in _STEP_MODELS}  # type: ignore
+# `type` is a required Literal (no default), so read the key from the annotation.
+STEP_TYPES: dict[str, type[BaseModel]] = {get_args(m.model_fields["type"].annotation)[0]: m for m in _STEP_MODELS}
 
 
 def parse_steps(raw: list[dict]) -> list:
@@ -252,20 +317,56 @@ _FILTER_OPS = {
 }
 
 
+def _filter_mask(s: pd.Series, op: str, value) -> pd.Series:
+    """Boolean row mask for a filter step.
+
+    Text ops (contains / starts_with / ends_with / in) are case-insensitive literal
+    matches over the value cast to string; NULL never matches (not even
+    not_contains). Comparisons against a numeric column coerce a numeric-string
+    value ("5" from the UI) to a number — DuckDB's implicit literal cast does the
+    same, keeping engine parity."""
+    if op in _FILTER_OPS:
+        if value is not None and isinstance(value, str) and pd.api.types.is_numeric_dtype(s):
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        return _FILTER_OPS[op](s, value)
+    txt = s.astype(str).str.lower()
+    v = str(value).lower()
+    if op == "in":
+        items = [x.strip() for x in v.split(",")]
+        return s.notna() & txt.isin(items)
+    if op in ("contains", "not_contains"):
+        hit = txt.str.contains(v, regex=False, na=False)
+    elif op == "starts_with":
+        hit = txt.str.startswith(v, na=False)
+    else:  # ends_with
+        hit = txt.str.endswith(v, na=False)
+    return s.notna() & (~hit if op == "not_contains" else hit)
+
+
 def apply_transforms(
     df: pd.DataFrame,
     steps,
-    join_loader: Optional[Callable[["JoinStep"], pd.DataFrame]] = None,
+    join_loader: Optional[Callable[[Any], pd.DataFrame]] = None,
 ) -> pd.DataFrame:
     """Apply transform steps in order, returning a new DataFrame (input untouched).
 
-    `join_loader(step) -> pd.DataFrame` resolves the right-hand frame for a join
-    step; required whenever the plan contains a join.
+    `join_loader(step) -> pd.DataFrame` resolves the other dataset's frame for any
+    step carrying a `dataset_id` (join, append); required whenever the plan has one.
     """
     out = df.copy()
     for i, raw_step in enumerate(steps):
         step = _coerce(raw_step)
         # ── Combine ──
+        if isinstance(step, AppendStep):
+            if join_loader is None:
+                raise TransformStepError(i, "append requires a loader")
+            # concat aligns by name: missing columns → NaN, new right columns go last.
+            out = pd.concat([out, join_loader(step)], ignore_index=True)
+            continue
+
         if isinstance(step, JoinStep):
             if step.left_on not in out.columns:
                 continue  # missing left key → skip, like other missing-column ops
@@ -308,6 +409,11 @@ def apply_transforms(
                         except (ValueError, TypeError):
                             pass
 
+        elif isinstance(step, SelectStep):
+            keep = [c for c in step.columns if c in out.columns]
+            if keep:  # none present → skip, like other missing-column ops
+                out = out[keep]
+
         elif isinstance(step, DuplicateStep):
             if step.column in out.columns:
                 new_col = f"{step.column}_copy"
@@ -320,8 +426,15 @@ def apply_transforms(
         # ── Rows ──
         elif isinstance(step, FilterStep):
             if step.column in out.columns:
-                mask = _FILTER_OPS[step.op](out[step.column], step.value)
+                mask = _filter_mask(out[step.column], step.op, step.value)
                 out = out[mask].copy()
+
+        elif isinstance(step, SortStep):
+            if step.column in out.columns:
+                out = out.sort_values(
+                    step.column, ascending=step.direction == "asc",
+                    na_position="last", kind="mergesort",
+                ).reset_index(drop=True)
 
         elif isinstance(step, DropnullsStep):
             if step.column in out.columns:
@@ -410,6 +523,36 @@ def apply_transforms(
                 mean, std = col.mean(), col.std()
                 out[step.column] = ((col - mean) / std) if std else col
 
+        elif isinstance(step, CalcStep):
+            if step.column in out.columns and step.column2 in out.columns:
+                a = pd.to_numeric(out[step.column], errors="coerce")
+                b = pd.to_numeric(out[step.column2], errors="coerce")
+                if step.op == "add":
+                    res = a + b
+                elif step.op == "subtract":
+                    res = a - b
+                elif step.op == "multiply":
+                    res = a * b
+                else:  # divide — x/0 → NULL (not ±inf), matching the SQL NULLIF
+                    res = (a / b).replace([np.inf, -np.inf], np.nan)
+                out[step.to] = res
+
+        # ── Summarize ──
+        elif isinstance(step, GroupStep):
+            if step.by in out.columns and (step.agg == "count" or step.column in out.columns):
+                # dropna=False: null keys form their own group, sorted last.
+                keys = out[step.by]
+                if step.agg == "count":
+                    res = out.groupby(keys, dropna=False, sort=True).size()
+                elif step.agg in ("sum", "avg"):
+                    g = pd.to_numeric(out[step.column], errors="coerce").groupby(keys, dropna=False, sort=True)
+                    # min_count=1: an all-null group sums to NULL, like SQL SUM.
+                    res = g.sum(min_count=1) if step.agg == "sum" else g.mean()
+                else:
+                    g = out[step.column].groupby(keys, dropna=False, sort=True)
+                    res = {"min": g.min, "max": g.max, "count_distinct": g.nunique}[step.agg]()
+                out = pd.DataFrame({step.by: res.index, step.to: res.to_numpy()})
+
         # ── Date & Time ──
         elif isinstance(step, DatepartStep):
             if step.column in out.columns:
@@ -449,6 +592,11 @@ def _build_catalog() -> dict:
             ],
             "lbl_template": "Cast {column} → {to_type}",
         },
+        "select": {
+            "cat": "Columns", "label": "Keep Columns", "desc": "Keep only the chosen columns, in order",
+            "fields": [{"key": "columns", "label": "Columns to keep", "kind": "columns"}],
+            "lbl_template": "Keep {columns}",
+        },
         "duplicate": {
             "cat": "Columns", "label": "Duplicate Column", "desc": "Copy a column",
             "fields": [{"key": "column", "label": "Column", "kind": "column"}],
@@ -468,10 +616,30 @@ def _build_catalog() -> dict:
             "cat": "Rows", "label": "Filter Rows", "desc": "Keep rows matching a condition",
             "fields": [
                 {"key": "column", "label": "Column", "kind": "column"},
-                {"key": "op", "label": "Condition", "kind": "select", "options": ["equals", "not equals", "less than", "less or equal", "greater than", "greater or equal", "contains", "is null", "is not null"]},
+                {
+                    "key": "op", "label": "Condition", "kind": "select",
+                    "options": ["eq", "ne", "lt", "le", "gt", "ge", "contains", "not_contains", "starts_with", "ends_with", "in", "isnull", "notnull"],
+                    "option_labels": {
+                        "eq": "equals", "ne": "does not equal", "lt": "is less than", "le": "is at most",
+                        "gt": "is greater than", "ge": "is at least", "contains": "contains",
+                        "not_contains": "does not contain", "starts_with": "starts with", "ends_with": "ends with",
+                        "in": "is one of (comma separated)", "isnull": "is empty", "notnull": "is not empty",
+                    },
+                },
                 {"key": "value", "label": "Value", "kind": "text", "placeholder": "value"},
             ],
             "lbl_template": "Filter {column} {op} {value}",
+        },
+        "sort": {
+            "cat": "Rows", "label": "Sort Rows", "desc": "Order rows by a column",
+            "fields": [
+                {"key": "column", "label": "Column", "kind": "column"},
+                {
+                    "key": "direction", "label": "Direction", "kind": "select", "options": ["asc", "desc"],
+                    "option_labels": {"asc": "ascending (A→Z, 0→9)", "desc": "descending (Z→A, 9→0)"},
+                },
+            ],
+            "lbl_template": "Sort by {column} {direction}",
         },
         "dropnulls": {
             "cat": "Rows", "label": "Remove Null Rows", "desc": "Drop rows where column is null",
@@ -575,6 +743,36 @@ def _build_catalog() -> dict:
             "fields": [{"key": "column", "label": "Column", "kind": "column"}],
             "lbl_template": "Z-score {column}",
         },
+        "calc": {
+            "cat": "Numeric", "label": "Calculated Column", "desc": "New column from two columns (+ − × ÷)",
+            "fields": [
+                {"key": "column", "label": "Column", "kind": "column"},
+                {
+                    "key": "op", "label": "Operator", "kind": "select", "options": ["add", "subtract", "multiply", "divide"],
+                    "option_labels": {"add": "+ plus", "subtract": "− minus", "multiply": "× times", "divide": "÷ divided by"},
+                },
+                {"key": "column2", "label": "Second column", "kind": "column"},
+                {"key": "to", "label": "New column name", "kind": "text", "placeholder": "total"},
+            ],
+            "lbl_template": "{to} = {column} {op} {column2}",
+        },
+        "group": {
+            "cat": "Summarize", "label": "Group & Summarize", "desc": "One row per group with a count, sum, average, min or max",
+            "fields": [
+                {"key": "by", "label": "Group by", "kind": "column"},
+                {
+                    "key": "agg", "label": "Summary", "kind": "select",
+                    "options": ["count", "sum", "avg", "min", "max", "count_distinct"],
+                    "option_labels": {
+                        "count": "count rows", "sum": "sum", "avg": "average", "min": "minimum",
+                        "max": "maximum", "count_distinct": "count distinct values",
+                    },
+                },
+                {"key": "column", "label": "Of column (ignored for count)", "kind": "column"},
+                {"key": "to", "label": "Result column name", "kind": "text", "placeholder": "auto"},
+            ],
+            "lbl_template": "Group by {by} → {agg} {column}",
+        },
         "datepart": {
             "cat": "Date & Time", "label": "Extract Date Part", "desc": "Year, month, or day as new column",
             "fields": [
@@ -592,6 +790,11 @@ def _build_catalog() -> dict:
                 {"key": "how", "label": "Join type", "kind": "select", "options": ["inner", "left", "right", "full"]},
             ],
             "lbl_template": "Join {how} on {left_on}={right_on}",
+        },
+        "append": {
+            "cat": "Combine", "label": "Append Rows", "desc": "Stack rows from another dataset (matching columns by name)",
+            "fields": [{"key": "dataset_id", "label": "Dataset", "kind": "dataset"}],
+            "lbl_template": "Append rows from dataset",
         },
     }
 

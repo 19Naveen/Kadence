@@ -277,16 +277,16 @@ async def transform_preview(
     """Apply transform steps to a sampled table and return the result.
 
     Used by the frontend when the user clicks "Apply" to see updated results,
-    or when a step's local apply() is unavailable. Join steps resolve + authorize
-    the referenced dataset (unauthorized/missing → 404) and read the right side
-    (capped at 100k rows for preview) via DuckDB.
+    or when a step's local apply() is unavailable. Join / append steps resolve +
+    authorize the referenced dataset (unauthorized/missing → 404) and read the
+    other side (capped at 100k rows for preview) via DuckDB.
     """
     df = pd.DataFrame(payload.rows, columns=payload.columns)
     steps_dicts = [
         s.model_dump() if hasattr(s, "model_dump") else s for s in payload.steps
     ]
 
-    # Resolve + authorize any join right datasets before applying (404 propagates).
+    # Resolve + authorize any join / append datasets before applying (404 propagates).
     join_sources = resolve_join_sources(db, payload.steps, owner_id=user["sub"])
 
     def join_loader(step):
@@ -458,8 +458,8 @@ async def get_dataset_lineage(
     user: dict = Depends(get_current_user),
 ):
     """Where this dataset originally came from (source_type + origin_detail, e.g. a DB
-    table name) plus any join steps in the job that produced its latest version. Only
-    the immediate join sources — the frontend calls this again per source dataset_id
+    table name) plus any join / append steps in the job that produced its latest
+    version. Only the immediate sources — the frontend calls this again per source dataset_id
     to walk further back and render a multi-hop lineage graph."""
     dataset = assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
     latest = repo.get_latest_version(db, dataset_id)
@@ -475,7 +475,7 @@ async def get_dataset_lineage(
     sources: list[LineageSource] = []
     transforms = (job.source_config or {}).get("_transforms") if job else None
     for step in transforms or []:
-        if (step or {}).get("type") != "join":
+        if (step or {}).get("type") not in ("join", "append"):
             continue
         src_id = step.get("dataset_id")
         if not src_id:
@@ -486,7 +486,7 @@ async def get_dataset_lineage(
         sources.append(LineageSource(
             dataset_id=src_dataset.id,
             dataset_name=src_dataset.name,
-            how=step.get("how", "inner"),
+            how="append" if step["type"] == "append" else step.get("how", "inner"),
             left_on=step.get("left_on", ""),
             right_on=step.get("right_on", ""),
         ))

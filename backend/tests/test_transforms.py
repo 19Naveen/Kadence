@@ -50,6 +50,66 @@ def test_filter_bad_op_raises():
         parse_steps([{"type": "filter", "column": "a", "op": "between", "value": 1}])
 
 
+@pytest.mark.parametrize("label,code", [
+    ("equals", "eq"), ("not equals", "ne"), ("less than", "lt"), ("less or equal", "le"),
+    ("greater than", "gt"), ("greater or equal", "ge"), ("contains", "contains"),
+    ("is null", "isnull"), ("is not null", "notnull"), ("starts_with", "starts_with"),
+])
+def test_filter_accepts_legacy_labels(label, code):
+    steps = parse_steps([{"type": "filter", "column": "a", "op": label, "value": "x"}])
+    assert steps[0].op == code
+
+
+def test_filter_text_op_without_value_raises():
+    with pytest.raises(ValidationError):
+        parse_steps([{"type": "filter", "column": "a", "op": "contains"}])
+
+
+def test_select_requires_columns():
+    with pytest.raises(ValidationError):
+        parse_steps([{"type": "select", "columns": []}])
+
+
+def test_calc_requires_to():
+    with pytest.raises(ValidationError):
+        parse_steps([{"type": "calc", "column": "a", "op": "add", "column2": "b", "to": ""}])
+
+
+def test_group_defaults_and_requires_column():
+    count, avg = parse_steps([
+        {"type": "group", "by": "k", "agg": "count", "column": "", "to": ""},
+        {"type": "group", "by": "k", "agg": "avg", "column": "v"},
+    ])
+    assert (count.column, count.to) == (None, "count")
+    assert avg.to == "avg_v"
+    with pytest.raises(ValidationError):
+        parse_steps([{"type": "group", "by": "k", "agg": "sum", "column": ""}])
+
+
+def test_catalog_exposes_new_ops():
+    from modules.ingestion.transforms import OPS_CATALOG, STEP_TYPES
+
+    assert set(OPS_CATALOG) == set(STEP_TYPES)  # every step model has a catalog entry
+    kinds = {op: [f["kind"] for f in OPS_CATALOG[op]["fields"]] for op in OPS_CATALOG}
+    assert kinds["sort"] == ["column", "select"]
+    assert kinds["select"] == ["columns"]
+    assert kinds["calc"] == ["column", "select", "column", "text"]
+    assert kinds["group"] == ["column", "select", "column", "text"]
+    assert kinds["append"] == ["dataset"]
+    assert OPS_CATALOG["group"]["cat"] == "Summarize"
+    # every select field with option_labels labels exactly its options
+    for op in OPS_CATALOG.values():
+        for f in op["fields"]:
+            if "option_labels" in f:
+                assert set(f["option_labels"]) == set(f["options"])
+    op_field = OPS_CATALOG["filter"]["fields"][1]
+    assert op_field["options"][:6] == ["eq", "ne", "lt", "le", "gt", "ge"]
+    assert op_field["option_labels"]["in"] == "is one of (comma separated)"
+    # every offered filter option is accepted by FilterStep
+    for code in op_field["options"]:
+        parse_steps([{"type": "filter", "column": "a", "op": code, "value": "x"}])
+
+
 def test_fillna_value_without_value_raises():
     with pytest.raises(ValidationError):
         parse_steps([{"type": "fillna", "column": "a", "strategy": "value"}])

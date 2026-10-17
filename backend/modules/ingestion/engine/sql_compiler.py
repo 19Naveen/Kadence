@@ -1,4 +1,4 @@
-"""Compile a transform plan (the 23 ops in modules.ingestion.transforms) into a
+"""Compile a transform plan (the ops in modules.ingestion.transforms) into a
 single chained-CTE DuckDB SQL query, with pandas-parity semantics.
 
 `compile_plan(steps, source_rel) -> str` builds:
@@ -20,7 +20,10 @@ we track only what the steps themselves add/remove:
                step has referenced and found present).
   - `absent` = columns a prior step removed (dropped / renamed away).
 
-A step whose required column is in `absent` (removed earlier) emits a pass-through
+After a `select` or `group` the column set is fully known ("closed world": the
+`_CLOSED` marker sits in `absent`), so any column outside `known` is missing too.
+
+A step whose required column is missing (removed earlier) emits a pass-through
 CTE, exactly like pandas. A reference to a column that is simply absent from the
 *source* (never seen) is not statically detectable — the SQL errors at run time
 and the Celery task maps it to a TransformStepError. This is the one documented
@@ -68,6 +71,19 @@ _CAST_SQL = {
 }
 
 _FILTER_OPS = {"lt": "<", "le": "<=", "gt": ">", "ge": ">="}
+
+# Case-insensitive literal text filters: DuckDB fn over (lowered value, lowered needle).
+_TEXT_FILTERS = {
+    "contains": "contains", "not_contains": "contains",
+    "starts_with": "starts_with", "ends_with": "ends_with",
+}
+
+_CALC_OPS = {"add": "+", "subtract": "-", "multiply": "*"}
+
+# Marker placed in `absent` once a step fixes the exact column set (select/group):
+# from then on any column not in `known` is missing. Cannot collide with a real
+# column name (NUL is not a valid identifier character in any source we read).
+_CLOSED = "\x00closed"
 
 
 # ── expression helpers ───────────────────────────────────────────────────────
@@ -129,9 +145,28 @@ _JOIN_SQL = {
 def _compile_one(step, prev: str, known: set, absent: set, join_sources, describe) -> str:
     t = step.type
 
+    # helper: is `col` provably removed (or outside a closed-world column set)?
+    def missing(col: str) -> bool:
+        return col in absent or (_CLOSED in absent and col not in known)
+
+    def touch(col: str) -> None:
+        """Mark a referenced source column as present."""
+        known.add(col)
+        absent.discard(col)
+
     # ── Combine ──
+    if t == "append":
+        if join_sources is None or describe is None:
+            raise ValueError("append step requires join_sources and describe")
+        right_rel = join_sources[str(step.dataset_id)]
+        for rc in describe(right_rel):
+            touch(rc)  # every right column exists after the union
+        # BY NAME: aligns columns by name, NULL-fills the gaps, new right columns go
+        # last — same as pd.concat. Row order across the union isn't guaranteed.
+        return f"SELECT * FROM {prev} UNION ALL BY NAME SELECT * FROM {right_rel}"
+
     if t == "join":
-        if step.left_on in absent:
+        if missing(step.left_on):
             return _passthrough(prev)  # missing left key → skip (pandas semantics)
         if join_sources is None or describe is None:
             raise ValueError("join step requires join_sources and describe")
@@ -161,16 +196,16 @@ def _compile_one(step, prev: str, known: set, absent: set, join_sources, describ
         on = f"__l.{q(step.left_on)} = __r.{q(step.right_on)}"
         return f"{sel} FROM {prev} __l {_JOIN_SQL[step.how]} {right_rel} __r ON {on}"
 
-    # helper: is `col` provably removed?
-    def missing(col: str) -> bool:
-        return col in absent
-
-    def touch(col: str) -> None:
-        """Mark a referenced source column as present."""
-        known.add(col)
-        absent.discard(col)
-
     # ── Columns ──
+    if t == "select":
+        keep = [c for c in step.columns if not missing(c)]
+        if not keep:
+            return _passthrough(prev)  # none present → skip (pandas semantics)
+        known.clear()
+        known.update(keep)
+        absent.add(_CLOSED)
+        return f"SELECT {', '.join(q(c) for c in keep)} FROM {prev}"
+
     if t == "drop":
         if missing(step.column):
             return _passthrough(prev)
@@ -229,9 +264,26 @@ def _compile_one(step, prev: str, known: set, absent: set, join_sources, describ
             where = f"{c} IS NULL"
         elif step.op == "notnull":
             where = f"{c} IS NOT NULL"
+        elif step.op == "in":
+            items = ", ".join(f"lower({lit(x.strip())})" for x in str(step.value).split(","))
+            where = f"{c} IS NOT NULL AND lower({_s(step.column)}) IN ({items})"
+        elif step.op in _TEXT_FILTERS:
+            hit = f"{_TEXT_FILTERS[step.op]}(lower({_s(step.column)}), lower({lit(str(step.value))}))"
+            where = f"{c} IS NOT NULL AND {'NOT ' if step.op == 'not_contains' else ''}{hit}"
         else:
+            # A numeric-string value ("5") is implicitly cast to the column type by
+            # DuckDB — pandas coerces it explicitly (transforms._filter_mask).
             where = f"{c} {_FILTER_OPS[step.op]} {lit(step.value)}"
         return f"SELECT * FROM {prev} WHERE {where}"
+
+    if t == "sort":
+        if missing(step.column):
+            return _passthrough(prev)
+        touch(step.column)
+        # Known limitation: DuckDB keeps this order through later projection/filter
+        # CTEs (preserve_insertion_order) but not through joins, aggregations,
+        # DISTINCT or window functions. Tie order is unspecified (pandas is stable).
+        return f"SELECT * FROM {prev} ORDER BY {q(step.column)} {step.direction.upper()} NULLS LAST"
 
     if t == "dropnulls":
         if missing(step.column):
@@ -364,6 +416,39 @@ def _compile_one(step, prev: str, known: set, absent: set, join_sources, describ
         expr = f"(({x}) - avg({x}) OVER ()) / NULLIF(stddev_samp({x}) OVER (), 0)"
         return _project(prev, [(step.column, expr)], known)
 
+    if t == "calc":
+        if missing(step.column) or missing(step.column2):
+            return _passthrough(prev)
+        touch(step.column)
+        touch(step.column2)
+        a, b = _num(step.column), _num(step.column2)
+        if step.op == "divide":  # x/0 → NULL (DuckDB alone would give ±inf)
+            expr = f"({a}) / NULLIF({b}, 0)"
+        else:
+            expr = f"({a}) {_CALC_OPS[step.op]} ({b})"
+        return _project(prev, [(step.to, expr)], known)
+
+    # ── Summarize ──
+    if t == "group":
+        if missing(step.by) or (step.agg != "count" and missing(step.column)):
+            return _passthrough(prev)
+        if step.agg == "count":
+            agg = "count(*)"
+        elif step.agg == "count_distinct":
+            agg = f"count(DISTINCT {q(step.column)})"  # = pandas nunique() (ignores NULL)
+        elif step.agg in ("sum", "avg"):
+            agg = f"{step.agg}({_num(step.column)})"
+        else:
+            agg = f"{step.agg}({q(step.column)})"
+        known.clear()
+        known.update((step.by, step.to))
+        absent.add(_CLOSED)
+        by = q(step.by)
+        return (
+            f"SELECT {by}, {agg} AS {q(step.to)} FROM {prev} "
+            f"GROUP BY {by} ORDER BY {by} NULLS LAST"
+        )
+
     # ── Date & Time ──
     if t == "datepart":
         if missing(step.column):
@@ -386,9 +471,9 @@ def compile_plan(steps: list, source_rel: str, join_sources=None, describe=None)
     `source_rel` is any valid FROM expression (a relation name or a
     `read_parquet('s3://...')` call). `steps` may be parsed models or raw dicts.
 
-    Join steps need two extra inputs (DuckDB cannot replicate pandas' collision
-    suffixing without knowing the column sets):
-      - `join_sources`: {dataset_id_str: right-relation SQL string}
+    Join and append steps need two extra inputs (DuckDB cannot replicate pandas'
+    collision suffixing without knowing the column sets):
+      - `join_sources`: {dataset_id_str: other-relation SQL string}
       - `describe`: callable rel-string -> list of that relation's column names
     When any join is present the left column set is seeded from `source_rel` via
     `describe`, so collision detection sees every live column.

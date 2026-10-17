@@ -249,7 +249,7 @@ The DuckDB engine exposes the same callable-dict contract as pandas
 (`load_source`, `apply_transforms`, `infer_schema`, `write_parquet`, `row_count`,
 `column_count`) plus a fused `run(job, transforms, storage_path)` that `tasks.py`
 prefers when present, executing load→transform→write as one SQL statement instead of
-per-step calls. Every one of the 23 transform ops (plus `join`) is compiled to SQL by
+per-step calls. Every transform op (incl. `join` / `append`) is compiled to SQL by
 `modules/ingestion/engine/sql_compiler.py`, which chains one CTE per step and mirrors
 pandas' "skip step if referenced column is missing" semantics. DuckDB is the deliberate
 scale ceiling for this pipeline — single-node, streaming, spills to disk for 10–100GB
@@ -285,8 +285,8 @@ PENDING (awaiting schema resolution) → user calls /resolve → RUNNING → SUC
 | POST | `/jobs/upload` | Yes | Create job from file (multipart). Same workspace-ownership validation as `/jobs`. Streams the upload straight to MinIO staging in 8MB chunks via `upload_staging_stream` (no full-file buffering); `staging_metadata.file_size` is the actual streamed byte count, computed after upload. Empty upload → 400. |
 | GET | `/jobs/{job_id}` | Yes | Poll job status |
 | GET | `/jobs/{job_id}/staged-preview` | Yes | Sample rows + inferred schema of the staged source, for Pipeline Studio |
-| GET | `/transforms/ops` | Yes | Canonical transform op catalog (`OPS_CATALOG`), incl. the `join` op |
-| POST | `/transforms/preview` | Yes | Apply a transform plan to a sampled table and return the result. Auth-gated (`db` + `get_current_user`) so `join` steps can resolve and authorize their right-hand dataset via `resolve_join_sources` — unauthorized or missing dataset → 404 `Dataset not found` (no 403, no existence leak). Right side capped at 100k rows for preview only. |
+| GET | `/transforms/ops` | Yes | Canonical transform op catalog (`OPS_CATALOG`). Field kinds: `column`, `columns` (multi-select, JSON array), `column_right`, `dataset`, `select` (with optional `option_labels` code→label map), `text`, `number` |
+| POST | `/transforms/preview` | Yes | Apply a transform plan to a sampled table and return the result. Auth-gated (`db` + `get_current_user`) so `join` / `append` steps can resolve and authorize their other dataset via `resolve_join_sources` — unauthorized or missing dataset → 404 `Dataset not found` (no 403, no existence leak). Right side capped at 100k rows for preview only. |
 | POST | `/jobs/{job_id}/commit` | Yes | Persist the transform plan and dispatch `run_ingestion_pipeline` |
 | POST | `/jobs/combine` | Yes | Ad-hoc combine of one or more already-imported datasets — no fresh import required. Builds an `IngestionJob` whose `staging_path` is the primary dataset's latest version file instead of an upload, then reuses `run_ingestion_pipeline` unmodified. Result is saved as a new dataset (`new_dataset_name`) or a new version of an existing one (`target_dataset_id`) — exactly one must be provided. |
 | POST | `/jobs/{job_id}/resolve` | Yes | Resolve a schema diff: submit mapping rules **or** `accept_new_schema`, then re-dispatch |
@@ -294,7 +294,7 @@ PENDING (awaiting schema resolution) → user calls /resolve → RUNNING → SUC
 | DELETE | `/datasets/{dataset_id}` | Yes | Delete dataset + versions + MinIO objects |
 | GET | `/datasets/{dataset_id}/versions` | Yes | List all versions |
 | GET | `/datasets/{dataset_id}/schema` | Yes | Get latest schema and diff |
-| GET | `/datasets/{dataset_id}/lineage` | Yes | Where this dataset originally came from (`source_type` + `origin_detail`, e.g. a DB table name from `repo.get_first_success_job`) plus single-hop join sources feeding its latest version (from `repo.get_latest_success_job`'s transform plan). No recursion server-side — the frontend calls this again per source `dataset_id` to walk further back and render a multi-hop lineage graph. Never exposes DB credentials, only the table name. |
+| GET | `/datasets/{dataset_id}/lineage` | Yes | Where this dataset originally came from (`source_type` + `origin_detail`, e.g. a DB table name from `repo.get_first_success_job`) plus single-hop join / append sources (append edges: `how="append"`, empty `left_on`/`right_on`) feeding its latest version (from `repo.get_latest_success_job`'s transform plan). No recursion server-side — the frontend calls this again per source `dataset_id` to walk further back and render a multi-hop lineage graph. Never exposes DB credentials, only the table name. |
 
 #### Schema Inference
 
@@ -365,7 +365,37 @@ Pipeline Studio against a staged preview, then applied to the **entire** staged 
 commit. Output is a new immutable `DatasetVersion`. Engine choice is transparent to the
 caller — see Transform Engine Selection above; this section covers the step catalog and joins.
 
-23 ops across categories Columns / Rows / Text / Numeric / Date & Time, plus:
+Ops by category (`OPS_CATALOG` is the source of truth):
+
+| Category | Ops |
+|---|---|
+| Columns | drop, rename, cast, `select` (keep listed columns, in order), duplicate, merge |
+| Rows | filter, `sort` (asc/desc, nulls last), dropnulls, dedupe, keeptop, fillna |
+| Text | upper, lower, capitalize, trim, replace, split, extract, length |
+| Numeric | round, abs, math, zscore, `calc` (new column = col ± × ÷ col2; ÷0 → NULL) |
+| Summarize | `group` (one row per `by` value: count / sum / avg / min / max / count_distinct; null keys are their own group, sorted last) |
+| Date & Time | datepart |
+| Combine | join, `append` |
+
+**`filter` ops** — `eq ne lt le gt ge` (a numeric-string value is compared as a number on a
+numeric column), `contains not_contains starts_with ends_with in` (case-insensitive literal
+match on the value as text; `in` takes a comma-separated list; NULL never matches), `isnull
+notnull`. Legacy label values (`"equals"`, `"greater than"`, `"is null"`, …) are normalized to
+the codes.
+
+**Closed world after `select` / `group`** — the column set is then exactly known, so the SQL
+compiler skips any later step referencing a column outside it (pandas parity).
+
+**`append` (category Combine)** — `{"type": "append", "dataset_id": "<uuid>"}` stacks the other
+dataset's latest-version rows under the current rows, aligning columns by name (missing →
+NULL, new columns last). pandas `pd.concat`; DuckDB `UNION ALL BY NAME`. Resolved, authorized
+and loaded exactly like a join's right side (any step with a `dataset_id` goes through
+`service.resolve_join_sources`).
+
+Known engine divergences (see `tests/test_engine_parity.py`): `sort` order survives later
+projection/filter steps in DuckDB but not joins/aggregations/window functions, and DuckDB tie
+order is unspecified; `append` row order is not guaranteed in DuckDB.
+
 
 **`join` (category Combine)** — combine the in-progress dataset with another dataset owned by
 the caller:
@@ -541,6 +571,18 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-10-18 — Transform ops: filter fix, sort, select, calc, group, append
+
+- Fixed `filter` end-to-end: catalog now offers op codes (+ `option_labels`) that `FilterStep`
+  accepts; legacy labels normalized; numeric-string values compare as numbers; new text ops
+  `contains`, `not_contains`, `starts_with`, `ends_with`, `in`
+- New ops `sort`, `select`, `calc`, `group`, `append` in both engines with parity tests; SQL
+  compiler goes closed-world after `select` / `group`
+- `resolve_join_sources`, the Celery task and `/transforms/preview` resolve any step with a
+  `dataset_id` (join and append); lineage includes append sources (`how="append"`)
+- New catalog field kind `columns` (multi-select) and optional `option_labels` on select fields
+- Fixed `STEP_TYPES` (was keyed by `PydanticUndefined`)
 
 ### 2026-10-18 — End-to-end fixes: Postgres source imports, dataset/workspace cleanup
 

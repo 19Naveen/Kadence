@@ -82,20 +82,21 @@ def create_ingestion_job(
 
 
 def resolve_join_sources(db: Session, steps: list, owner_id: str) -> dict[str, str]:
-    """Resolve every join step's right dataset to its latest-version storage_path,
-    enforcing that the caller owns each dataset's workspace chain.
+    """Resolve every step's other dataset (any step with a `dataset_id`: join,
+    append) to its latest-version storage_path, enforcing that the caller owns each
+    dataset's workspace chain.
 
     Returns {dataset_id_str: storage_path}. Unauthorized or missing datasets raise
-    404 "Dataset not found" (no info leak). Non-join plans resolve to {} without
-    touching the DB.
+    404 "Dataset not found" (no info leak). Plans without such steps resolve to {}
+    without touching the DB.
     """
     from modules.ingestion.auth import assert_dataset_owned
-    from modules.ingestion.transforms import JoinStep, _coerce
+    from modules.ingestion.transforms import _coerce
 
     result: dict[str, str] = {}
     for step in steps:
         step = _coerce(step)
-        if not isinstance(step, JoinStep):
+        if getattr(step, "dataset_id", None) is None:
             continue
         key = str(step.dataset_id)
         if key in result:
