@@ -1,294 +1,419 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { BarChart3, Database, LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { PageHeader } from "../../components/shared/PageHeader";
+import { PageLoading } from "../../components/shared/PageLoading";
 import { useDatasets, useQueryApi } from "../../lib/hooks/useDatasets";
+
+type Aggregation = "sum" | "avg" | "count" | "min" | "max";
+type ChartType = "bar" | "line" | "kpi";
+type Point = { label: string; value: number };
 
 interface Widget {
   id: string;
-  type: "line" | "bar" | "kpi";
+  /** The dataset this chart was built from; its columns only make sense there. */
+  datasetId: string;
+  datasetName: string;
+  type: ChartType;
   title: string;
-  xAxis: string;
-  yAxis: string;
-  aggregation: "sum" | "avg" | "count" | "min" | "max";
-  data: { label: string; value: number }[];
-  error?: string;
+  dimension: string;
+  /** null means "count rows". */
+  measure: string | null;
+  aggregation: Aggregation;
+  topN: number;
+  data: Point[];
+  /** KPI widgets: the aggregate over all rows. */
+  kpi: number | null;
 }
 
-function MiniLineChart({ data, color = "#0ea5e9" }: { data: { label: string; value: number }[]; color?: string }) {
-  if (data.length < 2) return <div className="flex h-full items-center justify-center text-xs text-secondary">Not enough points to plot</div>;
-  const max = Math.max(...data.map(d => d.value));
-  const min = Math.min(...data.map(d => d.value));
+interface FormState {
+  title: string;
+  type: ChartType;
+  dimension: string;
+  measure: string; // "" = count rows
+  aggregation: Exclude<Aggregation, "count">;
+  topN: number;
+}
+
+const TOP_N_OPTIONS = [10, 25, 50, 100];
+const INITIAL_FORM: FormState = { title: "", type: "bar", dimension: "", measure: "", aggregation: "sum", topN: 25 };
+const NUMERIC_TYPES = new Set(["integer", "decimal"]);
+const AGG_LABEL: Record<Aggregation, string> = { count: "Count", sum: "Sum", avg: "Average", min: "Min", max: "Max" };
+
+const fmtNum = (n: number) => n.toLocaleString("en-SG", { maximumFractionDigits: 2 });
+const quoteIdent = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const describe = (w: Pick<Widget, "aggregation" | "measure">) => `${AGG_LABEL[w.aggregation]}${w.measure ? ` of ${w.measure}` : " of rows"}`;
+
+function MiniLineChart({ data }: { data: Point[] }) {
+  const gradId = useId();
+  if (data.length < 2) return <p className="py-10 text-center text-sm text-text-tertiary">Not enough points to plot a line.</p>;
+  const values = data.map((d) => d.value);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
   const range = max - min || 1;
-  const width = 100;
-  const height = 40;
-  const padding = 4;
-
-  const points = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * (width - padding * 2) + padding;
-    const y = height - padding - ((d.value - min) / range) * (height - padding * 2);
-    return `${x},${y}`;
-  }).join(" ");
-
-  const areaPoints = `${padding},${height - padding} ${points} ${width - padding},${height - padding}`;
+  const width = 300;
+  const height = 120;
+  const pad = 8;
+  const pts = data.map((d, i) => ({
+    x: (i / (data.length - 1)) * (width - pad * 2) + pad,
+    y: height - pad - ((d.value - min) / range) * (height - pad * 2),
+    d,
+  }));
+  const line = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  const area = `${pad},${height - pad} ${line} ${width - pad},${height - pad}`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
-      <defs>
-        <linearGradient id={`grad-${color}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polyline points={areaPoints} fill={`url(#grad-${color})`} />
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function MiniBarChart({ data }: { data: { label: string; value: number }[] }) {
-  if (data.length === 0) return <div className="flex h-full items-center justify-center text-xs text-secondary">No data</div>;
-  const max = Math.max(...data.map(d => d.value)) || 1;
-  return (
-    <div className="flex h-full items-end gap-1 pb-1">
-      {data.map((d, i) => (
-        <div key={i} className="flex-1 rounded-t-sm bg-indigo-500/80 hover:bg-indigo-500 transition-colors" style={{ height: `${(d.value / max) * 100}%` }} title={`${d.label}: ${d.value}`}></div>
-      ))}
+    <div>
+      <div className="mb-1 flex justify-between text-xs text-text-tertiary tabular">
+        <span>High {fmtNum(max)}</span>
+        <span>Low {fmtNum(min)}</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Line chart of ${data.length} points`}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polyline points={area} fill={`url(#${gradId})`} />
+        <polyline points={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3" fill="hsl(var(--primary))">
+            <title>{`${p.d.label}: ${fmtNum(p.d.value)}`}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between gap-2 text-xs text-text-tertiary">
+        <span className="truncate">{data[0].label}</span>
+        <span className="truncate text-right">{data[data.length - 1].label}</span>
+      </div>
     </div>
   );
 }
 
-function KPICard({ data }: { data: { label: string; value: number }[] }) {
-  if (data.length === 0) return <div className="flex h-full items-center justify-center text-xs text-secondary">No data</div>;
-  const latest = data[data.length - 1].value;
-  const previous = data.length > 1 ? data[data.length - 2].value : latest;
-  const percentChange = previous ? ((latest - previous) / previous) * 100 : 0;
-  const isPositive = percentChange >= 0;
+function MiniBarChart({ data }: { data: Point[] }) {
+  if (data.length === 0) return <p className="py-10 text-center text-sm text-text-tertiary">No data to chart.</p>;
+  // Scale to the widest positive and negative bars so negatives are drawn left of a shared baseline.
+  const posMax = Math.max(0, ...data.map((d) => d.value));
+  const negMax = Math.max(0, ...data.map((d) => -d.value));
+  const span = posMax + negMax || 1;
+  const zero = (negMax / span) * 100;
 
   return (
-    <div className="flex flex-col justify-center h-full">
-      <div className="text-3xl font-light tracking-tight mb-2">{latest.toLocaleString()}</div>
-      <div className={`flex items-center text-sm font-medium ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isPositive ? "M5 10l7-7m0 0l7 7m-7-7v18" : "M19 14l-7 7m0 0l-7-7m7 7V3"} />
-        </svg>
-        {Math.abs(percentChange).toFixed(1)}% vs previous
+    <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+      {data.map((d, i) => {
+        const w = (Math.abs(d.value) / span) * 100;
+        const left = d.value < 0 ? zero - w : zero;
+        return (
+          <div key={i} className="flex items-center gap-2 text-xs" title={`${d.label}: ${fmtNum(d.value)}`}>
+            <span className="w-24 shrink-0 truncate text-right text-text-secondary">{d.label}</span>
+            <div className="relative h-5 flex-1">
+              <div className="absolute inset-y-0 w-px bg-border" style={{ left: `${zero}%` }} aria-hidden="true" />
+              <div
+                className={d.value < 0 ? "absolute inset-y-0.5 rounded-sm bg-text-tertiary" : "absolute inset-y-0.5 rounded-sm bg-primary"}
+                style={{ left: `${left}%`, width: `${w}%` }}
+              />
+            </div>
+            <span className="w-20 shrink-0 text-right font-mono tabular text-text">{fmtNum(d.value)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KPICard({ value, label }: { value: number | null; label: string }) {
+  return (
+    <div className="py-4">
+      <div className="text-4xl font-semibold tracking-tight tabular">{value == null ? "—" : fmtNum(value)}</div>
+      <p className="mt-2 text-sm text-text-secondary">{label}, across all rows</p>
+    </div>
+  );
+}
+
+function WidgetCard({ widget, datasetName, removed, onRemove }: {
+  widget: Widget;
+  datasetName: string;
+  removed: boolean;
+  onRemove: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const summary = widget.type === "kpi"
+    ? describe(widget)
+    : `${describe(widget)} by ${widget.dimension} · top ${widget.topN} groups`;
+
+  return (
+    <div className="card flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold">{widget.title}</h3>
+          <p className="mt-0.5 truncate text-xs text-text-secondary" title={summary}>{summary}</p>
+        </div>
+        {confirming ? (
+          <div className="flex shrink-0 items-center gap-1" role="group" aria-label={`Confirm removing ${widget.title}`}>
+            <span className="text-xs text-text-secondary">Remove?</span>
+            <button type="button" className="btn btn-danger btn-sm" onClick={onRemove}>Yes</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>No</button>
+          </div>
+        ) : (
+          <button type="button" className="btn-icon shrink-0" aria-label={`Remove chart ${widget.title}`} onClick={() => setConfirming(true)}>
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
+
+      <div className="min-h-32 flex-1">
+        {widget.type === "line" && <MiniLineChart data={widget.data} />}
+        {widget.type === "bar" && <MiniBarChart data={widget.data} />}
+        {widget.type === "kpi" && <KPICard value={widget.kpi} label={describe(widget)} />}
+      </div>
+
+      <p className="flex items-center gap-1.5 border-t border-border-subtle pt-3 text-xs text-text-tertiary">
+        <Database size={12} aria-hidden="true" />
+        <span className="truncate">{datasetName}</span>
+        {removed && <span className="badge bg-warning-muted text-warning">Dataset removed</span>}
+      </p>
     </div>
   );
 }
 
 export function EDADashboardsPage() {
   const { datasets, loading: datasetsLoading } = useDatasets();
-  const { preview, aggregate } = useQueryApi();
+  const { preview, aggregate, execute } = useQueryApi();
+  const formId = useId();
 
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
-  const [columns, setColumns] = useState<string[]>([]);
-  const [columnsError, setColumnsError] = useState<string>("");
+  const [selectedDatasetId, setSelectedDatasetId] = useState("");
+  const [schema, setSchema] = useState<Record<string, string>>({});
+  const [columnsLoading, setColumnsLoading] = useState(false);
+  const [columnsError, setColumnsError] = useState("");
 
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newWidget, setNewWidget] = useState<Partial<Widget>>({ type: "bar", aggregation: "count" });
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
 
-  // Default the selector to the first real dataset once loaded.
+  // Keep the selection valid when the dataset list changes (e.g. another workspace).
   useEffect(() => {
-    if (!selectedDatasetId && datasets.length > 0) setSelectedDatasetId(datasets[0].id);
+    if (datasets.some((d) => d.id === selectedDatasetId)) return;
+    setSelectedDatasetId(datasets[0]?.id ?? "");
   }, [datasets, selectedDatasetId]);
 
-  // Load column list (schema) for the selected dataset's latest version.
+  // Column list (with types) for the selected dataset's latest version.
   useEffect(() => {
-    if (!selectedDatasetId) { setColumns([]); return; }
-    let cancelled = false;
+    setSchema({});
     setColumnsError("");
+    if (!selectedDatasetId) { setColumnsLoading(false); return; }
+    let cancelled = false;
+    setColumnsLoading(true);
     preview(selectedDatasetId, 1)
-      .then((p) => { if (!cancelled) setColumns(Object.keys(p.dataset_schema)); })
-      .catch((e) => { if (!cancelled) { setColumns([]); setColumnsError(e.message); } });
+      .then((p) => { if (!cancelled) setSchema(p.dataset_schema); })
+      .catch((e) => { if (!cancelled) setColumnsError(e instanceof Error ? e.message : "Failed to load columns"); })
+      .finally(() => { if (!cancelled) setColumnsLoading(false); });
     return () => { cancelled = true; };
   }, [selectedDatasetId, preview]);
 
-  const loadWidgetData = useCallback(
-    async (w: Widget): Promise<Widget> => {
-      try {
-        const measure = w.aggregation === "count" ? null : w.yAxis;
-        const points = await aggregate(selectedDatasetId, w.xAxis, measure, w.aggregation);
-        return {
-          ...w,
-          data: points.map((p) => ({ label: p.label ?? "—", value: Number(p.value ?? 0) })),
-          error: undefined,
-        };
-      } catch (e: any) {
-        return { ...w, data: [], error: e.message };
-      }
-    },
-    [aggregate, selectedDatasetId],
-  );
+  const columns = useMemo(() => Object.keys(schema), [schema]);
+  const numericColumns = useMemo(() => columns.filter((c) => NUMERIC_TYPES.has(schema[c])), [columns, schema]);
+  const datasetNames = useMemo(() => new Map(datasets.map((d) => [d.id, d.name])), [datasets]);
 
-  // Re-run all widget queries when the active dataset changes.
-  useEffect(() => {
-    if (!selectedDatasetId || widgets.length === 0) return;
-    let cancelled = false;
-    Promise.all(widgets.map(loadWidgetData)).then((loaded) => {
-      if (!cancelled) setWidgets(loaded);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDatasetId]);
+  const patchForm = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
-  const handleAddWidget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newWidget.title || !newWidget.xAxis || (newWidget.aggregation !== "count" && !newWidget.yAxis)) return;
-
-    const base: Widget = {
-      id: `w-${Date.now()}`,
-      type: newWidget.type as Widget["type"],
-      title: newWidget.title,
-      xAxis: newWidget.xAxis,
-      yAxis: newWidget.yAxis ?? "",
-      aggregation: newWidget.aggregation as Widget["aggregation"],
-      data: [],
-    };
-    const loaded = await loadWidgetData(base);
-    setWidgets((prev) => [...prev, loaded]);
-    setIsAdding(false);
-    setNewWidget({ type: "bar", aggregation: "count" });
+  const selectDataset = (id: string) => {
+    setSelectedDatasetId(id);
+    setForm((f) => ({ ...f, dimension: "", measure: "" }));
+    setFormError("");
   };
 
-  const removeWidget = (id: string) => setWidgets((prev) => prev.filter(w => w.id !== id));
+  const handleAddWidget = async (e: FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    // Capture everything at click time so switching datasets mid-load can't misattribute the chart.
+    const datasetId = selectedDatasetId;
+    const datasetName = datasetNames.get(datasetId) ?? "";
+    const f = form;
+    const measure = f.measure || null;
+    const aggregation: Aggregation = measure ? f.aggregation : "count";
+    if (!datasetId || !f.title.trim() || (f.type !== "kpi" && !f.dimension)) return;
+
+    setSubmitting(true);
+    setFormError("");
+    try {
+      let data: Point[] = [];
+      let kpi: number | null = null;
+      if (f.type === "kpi") {
+        const expr = aggregation === "count" ? "COUNT(*)" : `${aggregation.toUpperCase()}(${quoteIdent(measure!)})`;
+        const res = await execute(datasetId, `SELECT ${expr} AS value FROM dataset`, 1);
+        const raw = res.rows[0]?.[0];
+        kpi = raw == null ? null : Number(raw);
+      } else {
+        const points = await aggregate(datasetId, f.dimension, measure, aggregation, f.topN);
+        data = points.map((p) => ({ label: p.label ?? "(empty)", value: Number(p.value ?? 0) }));
+        // The API returns groups ordered by value; a line reads left to right, so order by label.
+        if (f.type === "line") data.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+      }
+      setWidgets((prev) => [...prev, {
+        id: crypto.randomUUID(),
+        datasetId,
+        datasetName,
+        type: f.type,
+        title: f.title.trim(),
+        dimension: f.dimension,
+        measure,
+        aggregation,
+        topN: f.topN,
+        data,
+        kpi,
+      }]);
+      setIsAdding(false);
+      setForm(INITIAL_FORM);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not build this chart");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const closeForm = () => { setIsAdding(false); setFormError(""); };
+  const noDatasets = !datasetsLoading && datasets.length === 0;
+  const addDisabled = !selectedDatasetId || columnsLoading || !!columnsError || columns.length === 0;
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-5rem)]">
+    <div>
       <PageHeader
-        title="Dashboards & Reports"
-        subtitle="Explore your data visually with interactive ad-hoc dashboards. Charts run on the latest version of the selected dataset."
+        title="Dashboards"
+        subtitle="Build charts from the latest version of a dataset. Charts are not saved yet: they reset when you leave this page."
         actions={
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2 border border-subtle hover:border-primary/30 transition-colors text-xs group cursor-pointer">
-              <svg className="w-4 h-4 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79 8-4" />
-              </svg>
-              <select
-                className="bg-transparent border-none outline-hidden appearance-none pr-5 cursor-pointer text font-medium w-full"
-                value={selectedDatasetId}
-                onChange={(e) => setSelectedDatasetId(e.target.value)}
-                disabled={datasetsLoading || datasets.length === 0}
-              >
-                {datasets.length === 0 && <option value="">No datasets</option>}
-                {datasets.map((d) => (
-                  <option key={d.id} value={d.id} className="bg-surface text">{d.name}</option>
-                ))}
-              </select>
-              <svg className="w-3 h-3 text-secondary absolute right-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-            <button onClick={() => setIsAdding(true)} disabled={!selectedDatasetId || columns.length === 0} className="btn btn-primary text-sm disabled:opacity-40">
-              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
-              Add Chart
+          <>
+            <select
+              aria-label="Dataset for new charts"
+              className="input w-auto min-w-48 max-w-72"
+              value={selectedDatasetId}
+              onChange={(e) => selectDataset(e.target.value)}
+              disabled={datasetsLoading || datasets.length === 0}
+            >
+              {datasets.length === 0 && <option value="">{datasetsLoading ? "Loading…" : "No datasets"}</option>}
+              {datasets.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <button type="button" onClick={() => setIsAdding(true)} disabled={addDisabled} className="btn btn-primary">
+              {columnsLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}
+              {columnsLoading ? "Loading columns…" : "Add chart"}
             </button>
-          </div>
+          </>
         }
       />
 
-      <div className="flex-1 p-6 bg-surface-2/20">
+      {columnsError && (
+        <div role="alert" className="mb-6 rounded-lg border border-danger/20 bg-danger-muted p-3 text-sm text-danger">{columnsError}</div>
+      )}
 
-        {columnsError && (
-          <div className="mb-6 rounded-lg border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{columnsError}</div>
-        )}
-
-        {isAdding && (
-          <div className="mb-8 bg-white border border-subtle rounded-xl p-5 shadow-xs animate-in fade-in slide-in-from-top-2">
-            <div className="flex justify-between items-center mb-4 border-b border-subtle pb-3">
-              <h3 className="font-semibold">Configure New Chart</h3>
-              <button onClick={() => setIsAdding(false)} className="text-secondary hover:text-black">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-            <form onSubmit={handleAddWidget} className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">Title</label>
-                <input type="text" required value={newWidget.title || ''} onChange={e => setNewWidget({...newWidget, title: e.target.value})} className="input w-full" placeholder="e.g. Orders by region" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">Chart Type</label>
-                <select className="input w-full" value={newWidget.type} onChange={e => setNewWidget({...newWidget, type: e.target.value as Widget["type"]})}>
-                  <option value="bar">Bar Chart</option>
-                  <option value="line">Line Chart</option>
-                  <option value="kpi">KPI Metric</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">X-Axis (Dimension)</label>
-                <select className="input w-full" required value={newWidget.xAxis || ''} onChange={e => setNewWidget({...newWidget, xAxis: e.target.value})}>
-                  <option value="">Select column...</option>
-                  {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">Y-Axis (Measure)</label>
-                <select className="input w-full" value={newWidget.yAxis || ''} disabled={newWidget.aggregation === "count"} onChange={e => setNewWidget({...newWidget, yAxis: e.target.value})}>
-                  <option value="">{newWidget.aggregation === "count" ? "n/a for count" : "Select column..."}</option>
-                  {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-secondary mb-1">Aggregation</label>
-                  <select className="input w-full" value={newWidget.aggregation} onChange={e => setNewWidget({...newWidget, aggregation: e.target.value as Widget["aggregation"]})}>
-                    <option value="count">Count</option>
-                    <option value="sum">Sum</option>
-                    <option value="avg">Average</option>
-                    <option value="max">Max</option>
-                    <option value="min">Min</option>
-                  </select>
-                </div>
-                <button type="submit" className="btn btn-primary px-4 h-[38px]">Add</button>
-              </div>
-            </form>
+      {isAdding && (
+        <form onSubmit={handleAddWidget} className="card mb-6" aria-label="New chart">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold">New chart</h2>
+            <button type="button" onClick={closeForm} className="btn-icon" aria-label="Close new chart form"><X size={17} /></button>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {widgets.map(widget => (
-            <div key={widget.id} className="bg-white border border-subtle rounded-xl shadow-xs hover:shadow-md transition-shadow group flex flex-col">
-              <div className="flex justify-between items-center p-4 border-b border-subtle">
-                <div>
-                  <h3 className="font-semibold text-sm">{widget.title}</h3>
-                  <p className="text-[11px] text-secondary lowercase">{widget.aggregation}({widget.aggregation === "count" ? "*" : widget.yAxis}) by {widget.xAxis}</p>
-                </div>
-                <button onClick={() => removeWidget(widget.id)} className="btn btn-ghost p-1 opacity-0 group-hover:opacity-100 text-secondary hover:text-red-600 transition-all">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
-              <div className="flex-1 p-5 min-h-[160px]">
-                {widget.error ? (
-                  <div className="flex h-full items-center justify-center text-xs text-danger text-center">{widget.error}</div>
-                ) : (
-                  <>
-                    {widget.type === 'line' && <MiniLineChart data={widget.data} />}
-                    {widget.type === 'bar' && <MiniBarChart data={widget.data} />}
-                    {widget.type === 'kpi' && <KPICard data={widget.data} />}
-                  </>
-                )}
-              </div>
+          <fieldset disabled={submitting} className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label htmlFor={`${formId}-title`} className="field-label">Title</label>
+              <input id={`${formId}-title`} type="text" required className="input" value={form.title}
+                onChange={(e) => patchForm({ title: e.target.value })} placeholder="e.g. Orders by region" />
             </div>
-          ))}
-        </div>
-
-        {widgets.length === 0 && (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 bg-surface-2 rounded-full flex items-center justify-center mx-auto mb-4 border border-subtle">
-              <svg className="w-8 h-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            <div>
+              <label htmlFor={`${formId}-type`} className="field-label">Chart type</label>
+              <select id={`${formId}-type`} className="input" value={form.type} onChange={(e) => patchForm({ type: e.target.value as ChartType })}>
+                <option value="bar">Bar chart</option>
+                <option value="line">Line chart</option>
+                <option value="kpi">Single number</option>
+              </select>
             </div>
-            <h3 className="text-lg font-medium mb-2">{datasets.length === 0 ? "No datasets yet" : "No charts yet"}</h3>
-            <p className="text-secondary max-w-sm mx-auto mb-6">
-              {datasets.length === 0
-                ? "Import a dataset first, then build charts on its latest version here."
-                : "Add charts to explore the selected dataset visually. Aggregations run live against the latest version."}
-            </p>
-            {datasets.length > 0 && columns.length > 0 && (
-              <button onClick={() => setIsAdding(true)} className="btn btn-primary">Create Your First Chart</button>
+            {form.type !== "kpi" && (
+              <div>
+                <label htmlFor={`${formId}-dim`} className="field-label">Group by</label>
+                <select id={`${formId}-dim`} className="input" required value={form.dimension} onChange={(e) => patchForm({ dimension: e.target.value })}>
+                  <option value="">Select a column…</option>
+                  {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             )}
+            <div>
+              <label htmlFor={`${formId}-measure`} className="field-label">Value</label>
+              <select id={`${formId}-measure`} className="input" value={form.measure} onChange={(e) => patchForm({ measure: e.target.value })}>
+                <option value="">Count rows</option>
+                {numericColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {numericColumns.length === 0 && <p className="field-hint">This dataset has no numeric columns.</p>}
+            </div>
+            <div>
+              <label htmlFor={`${formId}-agg`} className="field-label">Calculation</label>
+              <select id={`${formId}-agg`} className="input" value={form.measure ? form.aggregation : "count"} disabled={!form.measure}
+                onChange={(e) => patchForm({ aggregation: e.target.value as FormState["aggregation"] })}>
+                {!form.measure && <option value="count">Count</option>}
+                <option value="sum">Sum</option>
+                <option value="avg">Average</option>
+                <option value="min">Min</option>
+                <option value="max">Max</option>
+              </select>
+            </div>
+            {form.type !== "kpi" && (
+              <div>
+                <label htmlFor={`${formId}-top`} className="field-label">Groups to show</label>
+                <select id={`${formId}-top`} className="input" value={form.topN} onChange={(e) => patchForm({ topN: Number(e.target.value) })}>
+                  {TOP_N_OPTIONS.map((n) => <option key={n} value={n}>Top {n}</option>)}
+                </select>
+              </div>
+            )}
+          </fieldset>
+          {formError && (
+            <div role="alert" className="mt-4 rounded-lg border border-danger/20 bg-danger-muted p-3 text-sm text-danger">{formError}</div>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className="btn btn-secondary" onClick={closeForm}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {submitting && <LoaderCircle size={15} className="animate-spin" />}
+              {submitting ? "Adding…" : "Add chart"}
+            </button>
           </div>
-        )}
+        </form>
+      )}
 
-      </div>
+      {datasetsLoading ? (
+        <PageLoading />
+      ) : noDatasets && widgets.length === 0 ? (
+        <div className="card mx-auto max-w-md text-center">
+          <BarChart3 size={22} className="mx-auto mb-3 text-text-tertiary" aria-hidden="true" />
+          <h2 className="text-base font-semibold">No datasets yet</h2>
+          <p className="mt-1 text-sm text-text-secondary">Import a dataset first, then build charts on its latest version here.</p>
+          <Link to="/app/data-import" className="btn btn-primary mt-4">Import data</Link>
+        </div>
+      ) : widgets.length === 0 ? (
+        !isAdding && (
+          <div className="card mx-auto max-w-md text-center">
+            <BarChart3 size={22} className="mx-auto mb-3 text-text-tertiary" aria-hidden="true" />
+            <h2 className="text-base font-semibold">No charts yet</h2>
+            <p className="mt-1 text-sm text-text-secondary">Add a chart to explore the selected dataset. Values are calculated from its latest version.</p>
+            <button type="button" onClick={() => setIsAdding(true)} disabled={addDisabled} className="btn btn-primary mt-4">
+              {columnsLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}
+              {columnsLoading ? "Loading columns…" : "Add your first chart"}
+            </button>
+          </div>
+        )
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {widgets.map((w) => {
+            const live = datasetNames.get(w.datasetId);
+            return (
+              <WidgetCard
+                key={w.id}
+                widget={w}
+                datasetName={live ?? w.datasetName}
+                removed={!datasetsLoading && live === undefined}
+                onRemove={() => setWidgets((prev) => prev.filter((x) => x.id !== w.id))}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
