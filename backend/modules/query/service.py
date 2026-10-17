@@ -4,7 +4,7 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.modules.ingestion.auth import assert_dataset_owned
+from modules.ingestion.auth import assert_dataset_owned
 from modules.query import duckdb_executor as ddb
 from modules.query.schemas import (
     AggregatePoint,

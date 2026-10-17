@@ -1,6 +1,6 @@
 import pandas as pd
 
-from modules.ingestion.storage.minio_client import download_staging_file
+from infrastructure.blob.minio_client import download_staging_file
 
 
 class ParquetConnector:

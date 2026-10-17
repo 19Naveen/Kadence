@@ -4,7 +4,7 @@ import pandas as pd
 
 from modules.ingestion.schema_inference import infer_schema as _infer_schema
 from modules.ingestion.source_loader import load_source as _load_source
-from modules.ingestion.storage.minio_client import upload_dataframe_as_parquet
+from infrastructure.blob.minio_client import upload_dataframe_as_parquet
 from modules.ingestion.transforms import apply_transforms as _apply_transforms
 
 

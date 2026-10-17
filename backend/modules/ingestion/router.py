@@ -16,7 +16,7 @@ from fastapi import (
     status,
 )
 from modules.ingestion import repository as repo
-from backend.modules.ingestion.auth import (
+from modules.ingestion.auth import (
     assert_dataset_owned,
     assert_job_owned,
     assert_workspace_owned,
@@ -39,7 +39,7 @@ from modules.ingestion.schemas import (
     TransformPreviewResponse,
 )
 from modules.ingestion.service import create_ingestion_job, resolve_schema_mapping
-from modules.ingestion.storage.minio_client import upload_staging_file
+from infrastructure.blob.minio_client import upload_staging_file
 from modules.ingestion.tasks import run_ingestion_pipeline
 from modules.ingestion.transforms import OPS_CATALOG, apply_transforms, parse_steps
 from modules.workspace.repository import get_workspace
@@ -340,7 +340,7 @@ async def delete_dataset(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    from modules.ingestion.storage.minio_client import delete_object
+    from infrastructure.blob.minio_client import delete_object
 
     assert_workspace_owned(db, workspace_id, owner_id=user["sub"])
     assert_dataset_owned(db, dataset_id, owner_id=user["sub"])

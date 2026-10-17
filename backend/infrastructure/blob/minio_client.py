@@ -22,7 +22,9 @@ def ensure_bucket() -> None:
 
 def upload_file(local_path: str, object_name: str) -> None:
     ensure_bucket()
-    client.fput_object(bucket_name=BUCKET_NAME, object_name=object_name, file_path=local_path)
+    client.fput_object(
+        bucket_name=BUCKET_NAME, object_name=object_name, file_path=local_path
+    )
 
 
 def upload_staging_file(file_bytes: bytes, object_name: str) -> None:

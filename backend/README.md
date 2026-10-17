@@ -47,6 +47,14 @@ backend/
 │   ├── security.py                # JWT encode/decode, bcrypt hashing
 │   └── dependencies.py            # Shared FastAPI Depends()
 │
+├── infrastructure/
+│   ├── blob/
+│   │   ├── minio_client.py        # MinIO helpers (upload, download, delete, Parquet)
+│   │   └── parquet_writer.py      # Chunked parquet write
+│   ├── cache/                     # (placeholder) caching abstraction
+│   ├── monitoring/                # (placeholder) observability
+│   └── queue/                     # (placeholder) messaging abstraction
+│
 └── modules/
     ├── auth/                      # JWT authentication
     ├── ingestion/                 # Data ingestion pipeline
@@ -66,9 +74,6 @@ backend/
     │   │   ├── snowflake_connector.py  # stub
     │   │   ├── mysql_connector.py      # stub
     │   │   └── mssql_connector.py      # stub
-    │   ├── storage/
-    │   │   ├── minio_client.py    # MinIO helpers (upload, download, staging)
-    │   │   └── parquet_writer.py  # Chunked parquet write
     │   └── sync/
     │       ├── watermark.py
     │       └── incremental.py
@@ -447,6 +452,13 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-07-13 — Refactor: extract MinIO client to infrastructure/
+
+- Moved `modules/ingestion/storage/minio_client.py` and `parquet_writer.py` to
+  `infrastructure/blob/` so they are shared across modules (already consumed by
+  `modules/query/duckdb_executor.py`). Updated all 7 import sites in the codebase.
+- Removed the `modules/ingestion/storage/` directory.
 
 ### 2026-07-11 — Security hardening: authorization, credential encryption, query/connector safety
 

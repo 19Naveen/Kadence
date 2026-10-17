@@ -12,7 +12,7 @@ import duckdb
 
 from core.config import settings
 from modules.ingestion import repository as repo
-from modules.ingestion.storage.minio_client import BUCKET_NAME
+from infrastructure.blob.minio_client import BUCKET_NAME
 
 # Aggregations allowed in the EDA aggregate endpoint, mapped to SQL templates.
 ALLOWED_AGGREGATIONS = {

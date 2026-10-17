@@ -56,7 +56,7 @@ def run_ingestion_pipeline(self, job_id: str):
         # Delete staging file after marking SUCCESS so the path is still known
         if staging_path:
             try:
-                from modules.ingestion.storage.minio_client import delete_object
+                from infrastructure.blob.minio_client import delete_object
                 delete_object(staging_path)
             except Exception:
                 pass

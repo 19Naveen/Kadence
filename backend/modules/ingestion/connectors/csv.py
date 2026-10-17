@@ -2,7 +2,7 @@ import re
 
 import pandas as pd
 
-from modules.ingestion.storage.minio_client import download_staging_file
+from infrastructure.blob.minio_client import download_staging_file
 
 _UNNAMED = re.compile(r"^Unnamed: \d+$")
 

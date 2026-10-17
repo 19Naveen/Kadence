@@ -246,9 +246,8 @@ def apply_transforms(df: pd.DataFrame, steps) -> pd.DataFrame:
     out = df.copy()
     for i, raw_step in enumerate(steps):
         step = _coerce(raw_step)
-        try:
         # ── Columns ──
-         if isinstance(step, DropStep):
+        if isinstance(step, DropStep):
             if step.column in out.columns:
                 out = out.drop(columns=[step.column])
 
