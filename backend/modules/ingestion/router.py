@@ -1,9 +1,20 @@
 import uuid
 from typing import Literal
 
+import pandas as pd
+
 from core.database import get_db
 from core.dependencies import get_current_user
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from modules.ingestion import repository as repo
 from modules.ingestion.enums import JobStatus, SourceType
 from modules.ingestion.schema_diff import SchemaDiff, compute_diff
@@ -19,10 +30,13 @@ from modules.ingestion.schemas import (
     ResolveSchemaMappingRequest,
     SchemaDiffResponse,
     StagedPreviewResponse,
+    TransformPreviewRequest,
+    TransformPreviewResponse,
 )
 from modules.ingestion.service import create_ingestion_job, resolve_schema_mapping
 from modules.ingestion.storage.minio_client import upload_staging_file
 from modules.ingestion.tasks import run_ingestion_pipeline
+from modules.ingestion.transforms import OPS_CATALOG, apply_transforms, parse_steps
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/data-ingest", tags=["data-ingest"])
@@ -35,7 +49,9 @@ def _diff_to_response(dataset_id, diff: SchemaDiff) -> SchemaDiffResponse:
         added_columns=diff.added_columns,
         missing_columns=diff.missing_columns,
         type_changes=[
-            ColumnDiff(column=c["column"], old_type=c["old_type"], new_type=c["new_type"])
+            ColumnDiff(
+                column=c["column"], old_type=c["old_type"], new_type=c["new_type"]
+            )
             for c in diff.type_changes
         ],
         suggested_mappings=[
@@ -51,6 +67,7 @@ def _job_to_response(job) -> IngestionJobResponse:
         dataset_id=job.dataset_id,
         status=job.status.value,
         source_type=job.source_type.value,
+        staging_metadata=job.staging_metadata,
         error_message=job.error_message,
         created_at=job.created_at,
         updated_at=job.updated_at,
@@ -58,8 +75,6 @@ def _job_to_response(job) -> IngestionJobResponse:
 
 
 # ── Create job from DB source ─────────────────────────────────────────────────
-
-
 @router.post(
     "/jobs", response_model=IngestionJobResponse, status_code=status.HTTP_202_ACCEPTED
 )
@@ -74,8 +89,6 @@ async def create_job(
 
 
 # ── Create job from file upload ───────────────────────────────────────────────
-
-
 @router.post(
     "/jobs/upload",
     response_model=IngestionJobResponse,
@@ -120,10 +133,23 @@ async def create_job_from_file(
         },
     )
 
-    staging_path = f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/{file.filename}"
+    staging_path = (
+        f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/{file.filename}"
+    )
     upload_staging_file(file_bytes, staging_path)
+    file_size = len(file_bytes)
 
+    # Parse to get row count for metadata (also converts to Parquet for DuckDB).
+    temp_df = load_source(job, nrows=1)  # quick schema peek
+    col_count = len(temp_df.columns)
+    staging_metadata = {
+        "file_size": file_size,
+        "row_count": None,
+        "column_count": col_count,
+        "source_format": source_type,
+    }
     job.staging_path = staging_path
+    job.staging_metadata = staging_metadata
     db.commit()
     db.refresh(job)
 
@@ -132,8 +158,6 @@ async def create_job_from_file(
 
 
 # ── Get job status ────────────────────────────────────────────────────────────
-
-
 @router.get("/jobs/{job_id}", response_model=IngestionJobResponse)
 async def get_job(
     job_id: uuid.UUID,
@@ -164,7 +188,9 @@ async def staged_preview(
 
     job = repo.get_job(db, job_id)
     if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
+        )
 
     try:
         df = load_source(job, nrows=limit)
@@ -195,6 +221,42 @@ async def staged_preview(
     )
 
 
+# ── Transform op catalog ───────────────────────────────────────────────────────
+
+@router.get("/transforms/ops")
+async def list_ops():
+    """Return the canonical transform op catalog for UI rendering."""
+    return OPS_CATALOG
+
+
+# ── Transform preview ──────────────────────────────────────────────────────────
+
+@router.post("/transforms/preview", response_model=TransformPreviewResponse)
+async def transform_preview(payload: TransformPreviewRequest):
+    """Apply transform steps to a sampled table and return the result.
+
+    Used by the frontend when the user clicks "Apply" to see updated results,
+    or when a step's local apply() is unavailable.
+    """
+    df = pd.DataFrame(payload.rows, columns=payload.columns)
+    steps_dicts = [
+        s.model_dump() if hasattr(s, "model_dump") else s for s in payload.steps
+    ]
+    try:
+        result = apply_transforms(df, steps_dicts)
+        rows = result.where(result.notna(), None).values.tolist()
+        return TransformPreviewResponse(
+            columns=list(result.columns),
+            rows=rows,
+        )
+    except Exception as e:
+        return TransformPreviewResponse(
+            columns=payload.columns,
+            rows=payload.rows,
+            errors={0: str(e)},
+        )
+
+
 # ── Commit an import (apply transform plan + run pipeline) ─────────────────────
 
 
@@ -208,7 +270,9 @@ async def commit_job(
     """Persist the user's transform plan and dispatch the pipeline to write the version."""
     job = repo.get_job(db, job_id)
     if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
+        )
     if job.status != JobStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -221,7 +285,6 @@ async def commit_job(
 
 
 # ── Submit schema resolution ──────────────────────────────────────────────────
-
 
 @router.post("/jobs/{job_id}/resolve", response_model=IngestionJobResponse)
 async def resolve_schema(
@@ -236,7 +299,6 @@ async def resolve_schema(
 
 # ── List dataset versions ─────────────────────────────────────────────────────
 
-
 @router.get("/datasets", response_model=list[DatasetResponse])
 async def list_datasets(
     workspace_id: uuid.UUID,
@@ -248,17 +310,19 @@ async def list_datasets(
     for ds in datasets:
         versions = repo.list_versions(db, ds.id)
         latest = versions[-1] if versions else None
-        result.append(DatasetResponse(
-            id=ds.id,
-            workspace_id=ds.workspace_id,
-            name=ds.name,
-            description=ds.description,
-            source_type=ds.source_type,
-            created_at=ds.created_at,
-            version_count=len(versions),
-            latest_row_count=latest.row_count if latest else None,
-            latest_file_size=latest.file_size if latest else None,
-        ))
+        result.append(
+            DatasetResponse(
+                id=ds.id,
+                workspace_id=ds.workspace_id,
+                name=ds.name,
+                description=ds.description,
+                source_type=ds.source_type,
+                created_at=ds.created_at,
+                version_count=len(versions),
+                latest_row_count=latest.row_count if latest else None,
+                latest_file_size=latest.file_size if latest else None,
+            )
+        )
     return result
 
 
@@ -270,9 +334,12 @@ async def delete_dataset(
     user: dict = Depends(get_current_user),
 ):
     from modules.ingestion.storage.minio_client import delete_object
+
     storage_paths = repo.delete_dataset(db, dataset_id, workspace_id)
     if not storage_paths and not repo.get_dataset(db, dataset_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+        )
     for path in storage_paths:
         try:
             delete_object(path)

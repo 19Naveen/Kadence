@@ -35,6 +35,7 @@ class IngestionJob(Base):
     source_type: Mapped[SourceType] = mapped_column(SAEnum(SourceType), nullable=False)
     source_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     staging_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    staging_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

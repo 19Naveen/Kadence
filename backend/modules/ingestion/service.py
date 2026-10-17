@@ -27,8 +27,25 @@ def create_ingestion_job(db: Session, payload: CreateIngestionJobRequest) -> tup
         )
 
     source_config = None
+    staging_metadata = None
     if payload.db_config:
         source_config = payload.db_config.model_dump()
+        # Try to estimate row count for engine selection.
+        try:
+            from modules.ingestion.source_loader import load_source
+            temp_job = type("TempJob", (), {
+                "source_type": SourceType(payload.source_type),
+                "staging_path": None,
+                "source_config": source_config,
+            })()
+            count_df = load_source(temp_job, nrows=1)
+            staging_metadata = {
+                "row_count": None,
+                "column_count": len(count_df.columns),
+                "source_format": payload.source_type,
+            }
+        except Exception:
+            staging_metadata = {"source_format": payload.source_type}
 
     job = repo.create_job(
         db,
@@ -37,6 +54,7 @@ def create_ingestion_job(db: Session, payload: CreateIngestionJobRequest) -> tup
             "status": JobStatus.PENDING,
             "source_type": SourceType(payload.source_type),
             "source_config": source_config,
+            "staging_metadata": staging_metadata,
         },
     )
 

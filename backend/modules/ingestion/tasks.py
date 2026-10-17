@@ -3,11 +3,8 @@ import uuid
 from celery_app import celery_app
 from core.database import SessionLocal
 from modules.ingestion import repository as repo
+from modules.ingestion.engine.select import select_engine
 from modules.ingestion.enums import JobStatus
-from modules.ingestion.schema_inference import infer_schema
-from modules.ingestion.source_loader import load_source
-from modules.ingestion.transforms import apply_transforms
-from modules.ingestion.storage.minio_client import upload_dataframe_as_parquet, delete_object
 
 
 @celery_app.task(bind=True, max_retries=0, name="ingestion.run_pipeline")
@@ -26,14 +23,15 @@ def run_ingestion_pipeline(self, job_id: str):
 
         dataset = repo.get_dataset(db, job.dataset_id)
 
-        df = load_source(job)
+        engine = select_engine(job.staging_metadata)
+        df = engine["load_source"](job)
 
         # Apply the transform plan the user built in the import wizard (DataForge).
         transforms = (job.source_config or {}).get("_transforms") or []
         if transforms:
-            df = apply_transforms(df, transforms)
+            df = engine["apply"](df, transforms)
 
-        inferred_schema = infer_schema(df)
+        inferred_schema = engine["schema"](df)
 
         latest_version = repo.get_latest_version(db, job.dataset_id)
         next_version = (latest_version.version + 1) if latest_version else 1
@@ -41,14 +39,14 @@ def run_ingestion_pipeline(self, job_id: str):
         # Storage layout (inside bucket 'datasets'): {workspace_id}/{dataset_id}/raw/v{n}/data.parquet
         storage_path = f"{dataset.workspace_id}/{dataset.id}/raw/v{next_version}/data.parquet"
 
-        file_size = upload_dataframe_as_parquet(df, storage_path)
+        file_size = engine["write_parquet"](df, storage_path)
 
         repo.create_dataset_version(db, {
             "dataset_id": job.dataset_id,
             "version": next_version,
             "storage_path": storage_path,
-            "row_count": len(df),
-            "column_count": len(df.columns),
+            "row_count": engine["row_count"](df),
+            "column_count": engine["column_count"](df),
             "schema": inferred_schema,
             "file_size": file_size,
         })
@@ -58,6 +56,7 @@ def run_ingestion_pipeline(self, job_id: str):
         # Delete staging file after marking SUCCESS so the path is still known
         if staging_path:
             try:
+                from modules.ingestion.storage.minio_client import delete_object
                 delete_object(staging_path)
             except Exception:
                 pass

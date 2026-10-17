@@ -55,6 +55,7 @@ class IngestionJobResponse(BaseModel):
     dataset_id: uuid.UUID
     status: str
     source_type: str
+    staging_metadata: dict | None = None
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -130,6 +131,20 @@ class StagedPreviewResponse(BaseModel):
     sample_rows: list[list]
     previous_schema: dict[str, str] | None = None
     diff: SchemaDiffResponse | None = None
+
+
+class TransformPreviewRequest(BaseModel):
+    """Request to preview transforms on a sampled table."""
+    columns: list[str]
+    rows: list[list]
+    steps: list[TransformStep] = Field(default_factory=list)
+
+
+class TransformPreviewResponse(BaseModel):
+    """Result of applying transforms to a sample for preview."""
+    columns: list[str]
+    rows: list[list]
+    errors: dict[int, str] = Field(default_factory=dict)
 
 
 class DatasetVersionResponse(BaseModel):
