@@ -1,5 +1,6 @@
 import uuid
 
+from core.crypto import encrypt_secret
 from fastapi import HTTPException, status
 from modules.ingestion import repository as repo
 from modules.ingestion.enums import JobStatus, SourceType, TransformType
@@ -8,11 +9,23 @@ from modules.ingestion.schemas import (
     ResolveSchemaMappingRequest,
 )
 from modules.ingestion.tasks import run_ingestion_pipeline
+from modules.workspace.repository import get_workspace
 from sqlalchemy.orm import Session
 
 
-def create_ingestion_job(db: Session, payload: CreateIngestionJobRequest) -> tuple:
-    """Create dataset (if new) + ingestion job. Returns (dataset, job)."""
+def create_ingestion_job(
+    db: Session, payload: CreateIngestionJobRequest, owner_id: str
+) -> tuple:
+    """Validate workspace ownership, then create dataset (if new) + ingestion job.
+
+    Returns (dataset, job).
+    """
+    workspace = get_workspace(db, payload.workspace_id, owner_id=owner_id)
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
+        )
+
     dataset = repo.get_dataset(db, payload.dataset_id)
     if not dataset:
         dataset = repo.create_dataset(
@@ -29,14 +42,15 @@ def create_ingestion_job(db: Session, payload: CreateIngestionJobRequest) -> tup
     source_config = None
     staging_metadata = None
     if payload.db_config:
-        source_config = payload.db_config.model_dump()
-        # Try to estimate row count for engine selection.
+        plaintext_config = payload.db_config.model_dump()
+        # Try to estimate row count for engine selection. Uses the plaintext config
+        # (a live connection needs the real password) — never persisted as-is.
         try:
             from modules.ingestion.source_loader import load_source
             temp_job = type("TempJob", (), {
                 "source_type": SourceType(payload.source_type),
                 "staging_path": None,
-                "source_config": source_config,
+                "source_config": plaintext_config,
             })()
             count_df = load_source(temp_job, nrows=1)
             staging_metadata = {
@@ -46,6 +60,11 @@ def create_ingestion_job(db: Session, payload: CreateIngestionJobRequest) -> tup
             }
         except Exception:
             staging_metadata = {"source_format": payload.source_type}
+
+        # Encrypt the password before it is ever written to the DB.
+        source_config = dict(plaintext_config)
+        if source_config.get("password"):
+            source_config["password"] = encrypt_secret(source_config["password"])
 
     job = repo.create_job(
         db,

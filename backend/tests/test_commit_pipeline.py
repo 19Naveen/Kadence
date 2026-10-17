@@ -28,12 +28,15 @@ def _commit_job(status=JobStatus.PENDING):
 
 
 def _run_commit(job_id, payload):
-    return asyncio.run(router_mod.commit_job(job_id, payload, db=None, user={}))
+    return asyncio.run(
+        router_mod.commit_job(job_id, payload, db=None, user={"sub": "u1"})
+    )
 
 
 def test_commit_persists_plan_and_dispatches(monkeypatch):
     job = _commit_job()
     monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
     recorded = {}
     monkeypatch.setattr(repo, "set_transform_plan", lambda db, jid, plan: recorded.update(plan=plan))
     monkeypatch.setattr(router_mod, "run_ingestion_pipeline",
@@ -57,6 +60,7 @@ def test_commit_404_when_missing(monkeypatch):
 def test_commit_400_when_not_pending(monkeypatch):
     job = _commit_job(status=JobStatus.SUCCESS)
     monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
     with pytest.raises(HTTPException) as exc:
         _run_commit(job.id, CommitJobRequest(transforms=[]))
     assert exc.value.status_code == 400

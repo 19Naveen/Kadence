@@ -24,6 +24,15 @@ CAST_TYPE_MAP: dict[str, str] = {
     "timestamp": "datetime64[ns]",
 }
 
+
+class TransformStepError(Exception):
+    """Raised when a specific step in a transform plan fails to apply."""
+
+    def __init__(self, step_index: int, message: str):
+        self.step_index = step_index
+        super().__init__(f"Step {step_index}: {message}")
+
+
 # ── Step models ────────────────────────────────────────────────────────────────
 
 # ── Columns ──
@@ -235,11 +244,11 @@ _FILTER_OPS = {
 def apply_transforms(df: pd.DataFrame, steps) -> pd.DataFrame:
     """Apply transform steps in order, returning a new DataFrame (input untouched)."""
     out = df.copy()
-    for raw_step in steps:
+    for i, raw_step in enumerate(steps):
         step = _coerce(raw_step)
-
+        try:
         # ── Columns ──
-        if isinstance(step, DropStep):
+         if isinstance(step, DropStep):
             if step.column in out.columns:
                 out = out.drop(columns=[step.column])
 

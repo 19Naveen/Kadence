@@ -7,6 +7,34 @@ Connectors are imported lazily so importing this module stays cheap.
 from modules.ingestion.enums import SourceType
 
 
+def _decrypted_config(source_config: dict | None) -> dict | None:
+    """Return a copy of a DB source_config with the ``password`` field decrypted.
+
+    ``source_config`` may also carry pipeline bookkeeping keys (``_pending_schema``,
+    ``_transforms``, ``_accept_new_schema``) which are passed through untouched.
+    The password is decrypted just-in-time so it never sits in memory longer than
+    the connection attempt requires.
+
+    Tolerant of an already-plaintext password (e.g. the row-count dry-run in
+    ``create_ingestion_job`` runs before the password is encrypted for storage):
+    if decryption fails, the original value is used as-is.
+    """
+    if not source_config or not source_config.get("password"):
+        return source_config
+
+    from cryptography.fernet import InvalidToken
+
+    from core.crypto import decrypt_secret
+
+    config = dict(source_config)
+    try:
+        config["password"] = decrypt_secret(config["password"])
+    except (InvalidToken, ValueError, TypeError):
+        # Already plaintext (pre-storage dry-run) — use as-is.
+        pass
+    return config
+
+
 def load_source(job, nrows: int | None = None):
     """Read the job's staged file / connected table into a pandas DataFrame.
 
@@ -28,13 +56,13 @@ def load_source(job, nrows: int | None = None):
     elif source == SourceType.PARQUET:
         df = ParquetConnector(job.staging_path).read()
     elif source == SourceType.POSTGRES:
-        df = PostgresConnector(job.source_config).read_all()
+        df = PostgresConnector(_decrypted_config(job.source_config)).read_all()
     elif source == SourceType.SNOWFLAKE:
-        df = SnowflakeConnector(job.source_config).read_all()
+        df = SnowflakeConnector(_decrypted_config(job.source_config)).read_all()
     elif source == SourceType.MYSQL:
-        df = MySQLConnector(job.source_config).read_all()
+        df = MySQLConnector(_decrypted_config(job.source_config)).read_all()
     elif source == SourceType.MSSQL:
-        df = MSSQLConnector(job.source_config).read_all()
+        df = MSSQLConnector(_decrypted_config(job.source_config)).read_all()
     else:
         raise ValueError(f"Unknown source type: {source}")
 

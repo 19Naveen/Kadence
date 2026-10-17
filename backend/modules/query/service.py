@@ -1,8 +1,10 @@
+import re
 import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.modules.ingestion.auth import assert_dataset_owned
 from modules.query import duckdb_executor as ddb
 from modules.query.schemas import (
     AggregatePoint,
@@ -17,9 +19,16 @@ _FORBIDDEN = (
     "insert", "update", "delete", "drop", "create", "alter",
     "attach", "copy", "pragma", "call", "export", "install", "load",
 )
+# Word-boundary matcher: rejects the keyword `create` but not an identifier like
+# `created_at` (a plain substring check over-blocks legitimate column names).
+_FORBIDDEN_RE = re.compile(
+    r"\b(" + "|".join(re.escape(kw) for kw in _FORBIDDEN) + r")\b",
+    re.IGNORECASE,
+)
 
 
-def _require_latest(db: Session, dataset_id: uuid.UUID) -> tuple[str, dict]:
+def _require_latest(db: Session, dataset_id: uuid.UUID, owner_id: str) -> tuple[str, dict]:
+    assert_dataset_owned(db, dataset_id, owner_id)
     resolved = ddb.resolve_latest(db, dataset_id)
     if not resolved:
         raise HTTPException(
@@ -44,7 +53,7 @@ def _validate_select(sql: str) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only read-only SELECT queries are allowed",
         )
-    if any(f in lowered for f in _FORBIDDEN):
+    if _FORBIDDEN_RE.search(lowered):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Query contains a disallowed keyword",
@@ -52,8 +61,8 @@ def _validate_select(sql: str) -> str:
     return cleaned
 
 
-def execute_query(db: Session, payload: QueryExecuteRequest) -> QueryResult:
-    storage_path, _schema = _require_latest(db, payload.dataset_id)
+def execute_query(db: Session, payload: QueryExecuteRequest, owner_id: str) -> QueryResult:
+    storage_path, _schema = _require_latest(db, payload.dataset_id, owner_id)
     sql = _validate_select(payload.sql)
     try:
         result = ddb.run_select(storage_path, sql, payload.row_limit)
@@ -64,8 +73,8 @@ def execute_query(db: Session, payload: QueryExecuteRequest) -> QueryResult:
     return QueryResult(**result)
 
 
-def aggregate(db: Session, payload: AggregateRequest) -> AggregateResponse:
-    storage_path, schema = _require_latest(db, payload.dataset_id)
+def aggregate(db: Session, payload: AggregateRequest, owner_id: str) -> AggregateResponse:
+    storage_path, schema = _require_latest(db, payload.dataset_id, owner_id)
     try:
         points = ddb.run_aggregate(
             storage_path, schema, payload.dimension, payload.measure,
@@ -78,8 +87,8 @@ def aggregate(db: Session, payload: AggregateRequest) -> AggregateResponse:
     return AggregateResponse(data=[AggregatePoint(**p) for p in points])
 
 
-def preview(db: Session, dataset_id: uuid.UUID, limit: int) -> DatasetPreviewResponse:
-    storage_path, schema = _require_latest(db, dataset_id)
+def preview(db: Session, dataset_id: uuid.UUID, limit: int, owner_id: str) -> DatasetPreviewResponse:
+    storage_path, schema = _require_latest(db, dataset_id, owner_id)
     try:
         result = ddb.run_preview(storage_path, limit)
     except Exception as exc:

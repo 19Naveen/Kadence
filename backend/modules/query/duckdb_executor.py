@@ -39,6 +39,10 @@ def _connect() -> duckdb.DuckDBPyConnection:
     con.execute(f"SET s3_endpoint='{settings.MINIO_ENDPOINT}';")
     con.execute(f"SET s3_access_key_id='{settings.MINIO_ACCESS_KEY}';")
     con.execute(f"SET s3_secret_access_key='{settings.MINIO_SECRET_KEY}';")
+    # Lock the configuration last so a subsequently-executed user query cannot
+    # re-enable dangerous settings (e.g. flipping to a different S3 endpoint, or
+    # toggling extension auto-install) via `SET ...` / `PRAGMA ...`.
+    con.execute("SET lock_configuration=true;")
     return con
 
 

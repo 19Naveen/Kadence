@@ -24,10 +24,14 @@ def _job():
 
 
 def _call(job_id, limit=50):
-    return asyncio.run(router_mod.staged_preview(job_id, limit=limit, db=None, user={}))
+    return asyncio.run(
+        router_mod.staged_preview(job_id, limit=limit, db=None, user={"sub": "u1"})
+    )
 
 
 def test_404_when_job_missing(monkeypatch):
+    # Ownership guard resolves the job first: a missing job → 404 (never reveals
+    # whether it exists but belongs to someone else).
     monkeypatch.setattr(repo, "get_job", lambda db, jid: None)
     with pytest.raises(HTTPException) as exc:
         _call(uuid.uuid4())
@@ -37,6 +41,7 @@ def test_404_when_job_missing(monkeypatch):
 def test_preview_first_import_no_diff(monkeypatch):
     job = _job()
     monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
     monkeypatch.setattr(repo, "get_latest_version", lambda db, did: None)
     df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     monkeypatch.setattr(router_mod, "load_source", lambda j, nrows=None: df.head(nrows) if nrows else df)
@@ -53,6 +58,7 @@ def test_preview_first_import_no_diff(monkeypatch):
 def test_preview_with_previous_version_diff(monkeypatch):
     job = _job()
     monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
     # latest version has columns {a, old}; incoming has {a, new} → diff
     latest = make_version(1, {"a": "integer", "old": "string"})
     monkeypatch.setattr(repo, "get_latest_version", lambda db, did: latest)
@@ -71,6 +77,7 @@ def test_preview_with_previous_version_diff(monkeypatch):
 def test_preview_nan_becomes_null(monkeypatch):
     job = _job()
     monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
     monkeypatch.setattr(repo, "get_latest_version", lambda db, did: None)
     df = pd.DataFrame({"a": [1.0, None]})
     monkeypatch.setattr(router_mod, "load_source", lambda j, nrows=None: df)

@@ -16,6 +16,11 @@ from fastapi import (
     status,
 )
 from modules.ingestion import repository as repo
+from backend.modules.ingestion.auth import (
+    assert_dataset_owned,
+    assert_job_owned,
+    assert_workspace_owned,
+)
 from modules.ingestion.enums import JobStatus, SourceType
 from modules.ingestion.schema_diff import SchemaDiff, compute_diff
 from modules.ingestion.schema_inference import infer_schema
@@ -37,6 +42,7 @@ from modules.ingestion.service import create_ingestion_job, resolve_schema_mappi
 from modules.ingestion.storage.minio_client import upload_staging_file
 from modules.ingestion.tasks import run_ingestion_pipeline
 from modules.ingestion.transforms import OPS_CATALOG, apply_transforms, parse_steps
+from modules.workspace.repository import get_workspace
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/data-ingest", tags=["data-ingest"])
@@ -83,7 +89,7 @@ async def create_job(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    _, job = create_ingestion_job(db, payload)
+    _, job = create_ingestion_job(db, payload, owner_id=user["sub"])
     # No auto-dispatch: the user reviews + transforms in DataForge, then POSTs /commit.
     return _job_to_response(job)
 
@@ -110,6 +116,12 @@ async def create_job_from_file(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
         )
 
+    workspace = get_workspace(db, workspace_id, owner_id=user["sub"])
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found"
+        )
+
     dataset = repo.get_dataset(db, dataset_id)
     if not dataset:
         dataset = repo.create_dataset(
@@ -133,8 +145,13 @@ async def create_job_from_file(
         },
     )
 
+    # Never use the client-supplied filename in the storage path (path traversal risk).
+    # Only a validated extension consistent with source_type is carried over; the
+    # object name itself is fully server-controlled (job id).
+    _ext_by_type = {"csv": ".csv", "xlsx": ".xlsx", "parquet": ".parquet"}
+    ext = _ext_by_type[source_type]
     staging_path = (
-        f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/{file.filename}"
+        f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/source{ext}"
     )
     upload_staging_file(file_bytes, staging_path)
     file_size = len(file_bytes)
@@ -164,11 +181,7 @@ async def get_job(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    job = repo.get_job(db, job_id)
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
-        )
+    job = assert_job_owned(db, job_id, owner_id=user["sub"])
     return _job_to_response(job)
 
 
@@ -186,11 +199,7 @@ async def staged_preview(
     against the dataset's latest version. Powers the DataForge import-review step."""
     import json
 
-    job = repo.get_job(db, job_id)
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
-        )
+    job = assert_job_owned(db, job_id, owner_id=user["sub"])
 
     try:
         df = load_source(job, nrows=limit)
@@ -268,11 +277,7 @@ async def commit_job(
     user: dict = Depends(get_current_user),
 ):
     """Persist the user's transform plan and dispatch the pipeline to write the version."""
-    job = repo.get_job(db, job_id)
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
-        )
+    job = assert_job_owned(db, job_id, owner_id=user["sub"])
     if job.status != JobStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -293,6 +298,7 @@ async def resolve_schema(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    assert_job_owned(db, job_id, owner_id=user["sub"])
     job = resolve_schema_mapping(db, job_id, payload)
     return _job_to_response(job)
 
@@ -305,6 +311,7 @@ async def list_datasets(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    assert_workspace_owned(db, workspace_id, owner_id=user["sub"])
     datasets = repo.list_datasets(db, workspace_id)
     result = []
     for ds in datasets:
@@ -335,6 +342,9 @@ async def delete_dataset(
 ):
     from modules.ingestion.storage.minio_client import delete_object
 
+    assert_workspace_owned(db, workspace_id, owner_id=user["sub"])
+    assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
+
     storage_paths = repo.delete_dataset(db, dataset_id, workspace_id)
     if not storage_paths and not repo.get_dataset(db, dataset_id):
         raise HTTPException(
@@ -359,6 +369,7 @@ async def list_versions(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
     versions = repo.list_versions(db, dataset_id)
     return [DatasetVersionResponse.model_validate(v) for v in versions]
 
@@ -372,6 +383,7 @@ async def get_schema_diff(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
     versions = repo.list_versions(db, dataset_id)
     if not versions:
         raise HTTPException(

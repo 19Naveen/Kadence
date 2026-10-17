@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     MINIO_ACCESS_KEY: str = Field(..., env="MINIO_ACCESS_KEY")
     MINIO_SECRET_KEY: str = Field(..., env="MINIO_SECRET_KEY")
     RABBITMQ_URL: str = Field(..., env="RABBITMQ_URL")
+    CREDENTIALS_ENCRYPTION_KEY: str = Field(..., env="CREDENTIALS_ENCRYPTION_KEY")
 
     class Config:
         env_file = ".env"
