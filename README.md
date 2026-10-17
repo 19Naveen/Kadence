@@ -2,7 +2,7 @@
 
 An AI-powered lakehouse data platform that enables users to ingest, transform, query, and model data at scale — without managing infrastructure or risking data integrity.
 
-> Detailed documentation: [Backend](./backend/README.md) | [Frontend](./frontend/README.md)
+> Detailed documentation: [Backend](./backend/README.md) | [Frontend](./frontend/README.md) | [Knowledge Base / Wiki](./docs/wiki/00-INDEX.md)
 
 ---
 
@@ -142,6 +142,13 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
 ---
 
 ## Changelog
+
+### 2026-07-10 — Backend knowledge base wiki added
+
+- Added `docs/wiki/` — a plain-language, code-free knowledge base explaining backend architecture,
+  concepts, modules, data model, API surface, developer patterns, the ingestion journey, and how the
+  system is designed to grow. Complements `backend/README.md` (setup/quick-reference) rather than
+  replacing it.
 
 ### 2026-06-17 — Live query/compute layer over latest version
 

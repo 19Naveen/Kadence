@@ -93,6 +93,7 @@ Store in `backend/.env` (never commit this file).
 | `MINIO_SECRET_KEY` | `password123` | MinIO secret key |
 | `RABBITMQ_URL` | `amqp://admin:password123@localhost:5672/` | Celery broker URL |
 | `JWT_SECRET` | `<hex string>` | JWT signing secret |
+| `CREDENTIALS_ENCRYPTION_KEY` | `<Fernet key>` | Fernet key used to encrypt DB source passwords at rest. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | JWT expiry in minutes |
 | `LOG_LEVEL` | `info` | Uvicorn log level |
 
@@ -201,7 +202,9 @@ Full async pipeline: file upload or DB connection → validate → infer schema 
 ```
 Upload File / Connect DB
         ↓
-Create IngestionJob (PENDING) in PostgreSQL
+Validate target workspace exists and is owned by the current user (404 otherwise)
+        ↓
+Create Dataset (if new) → Create IngestionJob (PENDING) in PostgreSQL
         ↓
 [File sources] Upload raw file to MinIO staging path
         ↓
@@ -248,8 +251,8 @@ PENDING (awaiting schema resolution) → user calls /resolve → RUNNING → SUC
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/jobs` | Yes | Create job from DB source (JSON) |
-| POST | `/jobs/upload` | Yes | Create job from file (multipart) |
+| POST | `/jobs` | Yes | Create job from DB source (JSON). Validates the target workspace exists and is owned by the caller (404 `Workspace not found` otherwise) before creating the dataset/job. |
+| POST | `/jobs/upload` | Yes | Create job from file (multipart). Same workspace-ownership validation as `/jobs`. |
 | GET | `/jobs/{job_id}` | Yes | Poll job status |
 | POST | `/jobs/{job_id}/resolve` | Yes | Resolve a schema diff: submit mapping rules **or** `accept_new_schema`, then re-dispatch |
 | GET | `/datasets` | Yes | List datasets in a workspace (with version count + latest stats) |
@@ -444,6 +447,45 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-07-11 — Security hardening: authorization, credential encryption, query/connector safety
+
+- **Authorization (IDOR fix):** Added `modules/ingestion/authz.py` with reusable guards
+  `assert_dataset_owned`, `assert_job_owned`, `assert_workspace_owned` (chain:
+  `IngestionJob → Dataset → Workspace.owner_id == user["sub"]`; all raise `404` on miss/foreign
+  ownership so existence of other users' resources isn't leaked). Applied to every ingestion
+  endpoint taking a `job_id`/`dataset_id`/`workspace_id` (`get_job`, `staged_preview`, `commit_job`,
+  `resolve`, `list_versions`, `schema`, `delete_dataset`, `list_datasets`) and to all query
+  endpoints (`/query/execute`, `/query/aggregate`, `/query/datasets/{id}/preview`) via
+  `modules/query/service` (`owner_id` threaded from routers).
+- **Credential encryption at rest:** DB source passwords in `IngestionJob.source_config` are now
+  encrypted with Fernet before persistence (`core/crypto.py`: `encrypt_secret`/`decrypt_secret`;
+  keyed by new `CREDENTIALS_ENCRYPTION_KEY`). `service.create_ingestion_job` encrypts on write;
+  `source_loader._decrypted_config` decrypts just-in-time for connectors (tolerant of the plaintext
+  dry-run used for row-count estimation). Bookkeeping keys (`_pending_schema`, `_transforms`,
+  `_accept_new_schema`) are left untouched. Requires the `cryptography` dependency.
+- **SQL injection (Postgres connector):** `postgres_connector.py` composes `SELECT * FROM {table}`
+  via `psycopg2.sql.Identifier` (schema-qualified names quoted per-part) instead of f-string
+  interpolation, and forces `set_session(readonly=True)` so a user-supplied passthrough `query`
+  cannot mutate the source. MySQL/MSSQL/Snowflake connectors remain unimplemented stubs (no surface).
+- **Query safety:** `modules/query/service._validate_select` replaced the substring blocklist with a
+  word-boundary regex (`\b(keyword)\b`) so identifiers like `created_at` are no longer over-blocked,
+  keeping the single-statement + must-start-with-SELECT/WITH checks. `duckdb_executor._connect` now
+  ends setup with `SET lock_configuration=true;` so queries can't re-enable dangerous engine settings.
+- **Path traversal (upload):** `POST /jobs/upload` no longer uses the client filename in the storage
+  path. The object name is fully server-controlled: `{workspace_id}/{dataset_id}/staging/{job.id}/source{ext}`
+  where `ext` is derived solely from the validated `source_type`.
+
+### 2026-07-10 — Enforce workspace ownership before dataset/job creation
+
+- `modules/ingestion/service.create_ingestion_job` now requires `owner_id` and calls
+  `modules/workspace/repository.get_workspace(db, workspace_id, owner_id)` before creating a
+  dataset or job. Raises `404 Workspace not found` if the workspace doesn't exist or isn't owned
+  by the current user. `POST /jobs` passes `owner_id=user["sub"]`.
+- `POST /jobs/upload` (router-level dataset creation, previously duplicated the same logic
+  inline) gained the identical workspace-ownership check before its `get_dataset`/`create_dataset`
+  block.
+- Ordering is now strictly: validate workspace → create dataset (if new) → create job.
 
 ### 2026-06-17 — Query module (DuckDB) + accept-new-schema resolution
 
