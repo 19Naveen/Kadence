@@ -1,12 +1,12 @@
 import pandas as pd
-import psycopg2
-from psycopg2 import sql
+import psycopg
+from psycopg import sql
 
 
 def _safe_table_identifier(table: str) -> sql.Composable:
     """Build a safely-quoted identifier for a (possibly schema-qualified) table name.
 
-    Splits on '.' and quotes each part independently via ``psycopg2.sql.Identifier``,
+    Splits on '.' and quotes each part independently via ``psycopg.sql.Identifier``,
     so a value like ``public.orders`` becomes ``"public"."orders"`` and cannot be used
     to inject arbitrary SQL regardless of its contents.
     """
@@ -21,18 +21,25 @@ class PostgresConnector:
         self.config = config
 
     def _connect(self):
-        conn = psycopg2.connect(**self._connect_kwargs())
+        conn = psycopg.connect(**self._connect_kwargs())
         # Belt-and-suspenders: even if the composed query above is safe, force the
         # session read-only so a malicious/careless user-supplied `query` (passthrough
         # mode) cannot mutate the source database. Named (server-side) cursors require
         # autocommit to stay off, which is the default here.
-        conn.set_session(readonly=True)
+        conn.read_only = True
         return conn
 
     def _connect_kwargs(self) -> dict:
-        return {
-            k: v for k, v in self.config.items() if k not in ("table", "query")
+        # `_`-prefixed keys (e.g. `_transforms`, `_pending_schema`) are pipeline state
+        # stored on source_config, not libpq connection options.
+        kwargs = {
+            k: v for k, v in self.config.items()
+            if k not in ("table", "query") and not k.startswith("_")
         }
+        # psycopg 3 only accepts libpq's `dbname`; the API/UI sends `database`.
+        if "database" in kwargs:
+            kwargs["dbname"] = kwargs.pop("database")
+        return kwargs
 
     def _build_query(self) -> sql.Composable | str:
         table = self.config.get("table")
@@ -60,6 +67,7 @@ class PostgresConnector:
     def read_all(self) -> pd.DataFrame:
         chunks = []
         for columns, rows in self.stream_table():
-            chunks.append(pd.DataFrame(rows, columns=columns))
+            # coerce_float: NUMERIC arrives as Decimal; make it float like pd.read_sql does.
+            chunks.append(pd.DataFrame.from_records(rows, columns=columns, coerce_float=True))
 
         return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()

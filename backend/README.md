@@ -538,6 +538,14 @@ celery -A celery_app worker --loglevel=info
 
 ## Changelog
 
+### 2026-10-18 — End-to-end fixes: Postgres source imports, dataset/workspace cleanup
+
+- Postgres source imports always failed in the pipeline (`invalid connection option "_transforms"`):
+  `PostgresConnector` passed `_`-prefixed pipeline state from `source_config` to the driver. It now
+  passes only connection options. `NUMERIC` columns now load as numbers (`coerce_float=True`, as
+  `pd.read_sql` does) instead of strings
+- Tests: `test_postgres_connector.py` (internal keys)
+
 ### 2026-10-18 — Postgres database name lowercased to `kadence`
 
 - `docker-compose.yml` now creates `POSTGRES_DB: kadence`. Postgres database names are
@@ -546,6 +554,15 @@ celery -A celery_app worker --loglevel=info
 - The Alembic `baseline` migration (`6455dd9affdd`) was empty, so a fresh database got no tables.
   It now creates all six tables (and its downgrade drops the enum types). Databases already
   stamped at `baseline` keep their tables and are unaffected
+
+### 2026-10-18 — Dependency upgrade + psycopg 3
+
+- `uv lock --upgrade`: notable bumps SQLAlchemy 2.0→2.1, FastAPI 0.136→0.143, Starlette 1.1→1.8,
+  PyArrow 24→26, Redis 7→8, Pydantic 2.13→2.14, LangChain 1.3→1.4, Alembic 1.18→1.20
+- SQLAlchemy 2.1 resolves `postgresql://` to the psycopg 3 driver, so `psycopg2-binary` was
+  replaced by `psycopg[binary]`. `DATABASE_URL` format is unchanged
+- `PostgresConnector` ported to psycopg 3 (`conn.read_only = True`; `database` config key mapped
+  to libpq `dbname`). Covered by `tests/test_postgres_connector.py`
 
 ### 2026-08-06 — PostgreSQL host port changed
 

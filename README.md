@@ -67,7 +67,7 @@ An AI-powered lakehouse data platform that enables users to ingest, transform, q
 | Frontend | React 18, Vite, TypeScript, TailwindCSS, react-router-dom |
 | Backend API | FastAPI (Python 3.14), Uvicorn |
 | Task Queue | Celery 5 + RabbitMQ |
-| Metadata DB | PostgreSQL 16 (SQLAlchemy 2.0, Alembic) |
+| Metadata DB | PostgreSQL 16 (SQLAlchemy 2.1, psycopg 3, Alembic) |
 | Object Storage | MinIO (S3-compatible) |
 | Columnar Compute | DuckDB, PyArrow, Pandas — DuckDB powers both live AI Query reads and, above a configurable size threshold, large-scale (10-100GB) ingestion transform execution directly against MinIO |
 | ML | scikit-learn, XGBoost |
@@ -155,6 +155,11 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
   content from this undocumented variable). If it is unset, `make docker-up` stops with
   `required variable MINIO_LICENSE is missing a value` instead of starting a MinIO that denies
   every S3 call with `No license is installed`
+
+### 2026-10-18 — Frontend and backend dependency upgrade
+
+- Backend: all packages refreshed in `uv.lock`; SQLAlchemy 2.1 defaults to psycopg 3, so
+  `psycopg2-binary` was replaced by `psycopg[binary]` (see `backend/README.md`)
 
 ### 2026-08-06 — PostgreSQL host port changed
 
