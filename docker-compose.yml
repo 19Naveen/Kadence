@@ -1,13 +1,16 @@
 services:
 
   minio:
-    image: minio/minio
+    # minio/minio is no longer published; AIStor Free needs a license key (free from min.io)
+    image: quay.io/minio/aistor/minio:latest
     container_name: minio
-    command: server /data --console-address ":9001"
+    command: minio server /data --console-address ":9001"
 
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
+      # License key content, read from the repo-root .env (gitignored)
+      MINIO_LICENSE: ${MINIO_LICENSE:?Set MINIO_LICENSE in the repo-root .env (AIStor Free key from min.io)}
 
     ports:
       - "9000:9000"
@@ -22,9 +25,9 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: Kadence
+      POSTGRES_DB: kadence
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

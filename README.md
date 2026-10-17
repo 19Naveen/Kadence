@@ -82,8 +82,8 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 
 | Service | Port(s) | Purpose |
 |---|---|---|
-| PostgreSQL 16 | 5432 | Metadata storage |
-| MinIO | 9000 (API), 9001 (Console) | Parquet file storage |
+| PostgreSQL 16 | 5434 (host) → 5432 (container) | Metadata storage |
+| MinIO (AIStor Free) | 9000 (API), 9001 (Console) | Parquet file storage |
 | RabbitMQ 3.13 | 5672 (AMQP), 15672 (Management) | Celery task broker |
 
 ---
@@ -93,6 +93,9 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 ### Prerequisites
 
 - Python 3.14+, Node.js 18+, Docker + Docker Compose, `uv`
+- AIStor Free license: get a key from https://min.io/download and add `MINIO_LICENSE=<key>` to a
+  `.env` file in the repo root (gitignored; Docker Compose reads it automatically). Upstream
+  `minio/minio` images are no longer published.
 
 ### Run everything
 
@@ -143,6 +146,19 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
 ---
 
 ## Changelog
+
+### 2026-10-18 — MinIO image switched to AIStor Free
+
+- `minio/minio` is unmaintained and no longer pullable from Docker Hub or Quay; `docker-compose.yml`
+  now uses `quay.io/minio/aistor/minio`
+- The license key is passed as `MINIO_LICENSE` from the repo-root `.env` (AIStor reads the key
+  content from this undocumented variable). If it is unset, `make docker-up` stops with
+  `required variable MINIO_LICENSE is missing a value` instead of starting a MinIO that denies
+  every S3 call with `No license is installed`
+
+### 2026-08-06 — PostgreSQL host port changed
+
+- Mapped the development PostgreSQL service to host port `5434` to avoid conflicts with other local PostgreSQL containers; it continues to use port `5432` within Docker.
 
 ### 2026-07-16 — Pipeline Studio: DuckDB scale engine + cross-dataset joins
 

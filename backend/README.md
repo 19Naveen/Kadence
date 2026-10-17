@@ -92,7 +92,7 @@ Store in `backend/.env` (never commit this file).
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/Kadence` | PostgreSQL connection |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5434/kadence` | PostgreSQL connection |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO API endpoint |
 | `MINIO_ACCESS_KEY` | `admin` | MinIO access key |
 | `MINIO_SECRET_KEY` | `password123` | MinIO secret key |
@@ -537,6 +537,16 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-10-18 — Postgres database name lowercased to `kadence`
+
+- `docker-compose.yml` now creates `POSTGRES_DB: kadence`. Postgres database names are
+  case-sensitive, so `DATABASE_URL` must end in `/kadence` (an existing `Kadence` DB can be renamed
+  with `ALTER DATABASE "Kadence" RENAME TO kadence`)
+
+### 2026-08-06 — PostgreSQL host port changed
+
+- Development PostgreSQL now maps to host port `5434` (container port remains `5432`) to coexist with local PostgreSQL containers already using `5432` and `5433`. Set `DATABASE_URL` to `localhost:5434` when running the backend on the host.
 
 ### 2026-07-19 — Data lineage endpoint + fix: join step's right-side key defaulted to empty
 
