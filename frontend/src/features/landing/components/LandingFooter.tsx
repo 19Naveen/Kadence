@@ -1,43 +1,40 @@
 import { Link } from "react-router-dom";
 import { BrandMark } from "../../../components/shared/BrandMark";
 
+const linkClass = "text-sm text-text-secondary transition-colors hover:text-text";
+
 export function LandingFooter() {
   return (
-    <footer className="border-t border-border py-12 px-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row items-start justify-between gap-8">
+    <footer className="border-t border-border px-6 py-12">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col items-start justify-between gap-8 md:flex-row">
           <div className="space-y-3">
             <BrandMark size="sm" />
-            <p className="text-sm text-text-tertiary max-w-xs leading-relaxed">
-              AI-powered lakehouse platform for data ingestion, exploration, and ML.
+            <p className="max-w-xs text-sm leading-relaxed text-text-tertiary">
+              A workspace for importing, shaping and querying your data.
             </p>
           </div>
 
           <div className="flex gap-12">
             <div className="space-y-3">
-              <p className="text-xs font-black uppercase tracking-widest text-text-tertiary">Platform</p>
+              <p className="section-label">Product</p>
               <div className="flex flex-col gap-2">
-                <a href="#features" className="text-sm text-text-secondary hover:text-text transition-colors">Features</a>
-                <a href="#how-it-works" className="text-sm text-text-secondary hover:text-text transition-colors">How It Works</a>
+                <a href="#features" className={linkClass}>Features</a>
+                <a href="#how-it-works" className={linkClass}>How it works</a>
               </div>
             </div>
             <div className="space-y-3">
-              <p className="text-xs font-black uppercase tracking-widest text-text-tertiary">Account</p>
+              <p className="section-label">Account</p>
               <div className="flex flex-col gap-2">
-                <Link to="/signup" className="text-sm text-text-secondary hover:text-text transition-colors">Sign Up</Link>
-                <Link to="/signin" className="text-sm text-text-secondary hover:text-text transition-colors">Sign In</Link>
+                <Link to="/signup" className={linkClass}>Create account</Link>
+                <Link to="/signin" className={linkClass}>Sign in</Link>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-10 pt-6 border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-text-tertiary">
-            © {new Date().getFullYear()} Kadence. All rights reserved.
-          </p>
-          <p className="text-xs text-text-tertiary">
-            Built with FastAPI · PostgreSQL · MinIO · React
-          </p>
+        <div className="mt-10 border-t border-border-subtle pt-6">
+          <p className="text-xs text-text-tertiary">© {new Date().getFullYear()} Kadence. All rights reserved.</p>
         </div>
       </div>
     </footer>

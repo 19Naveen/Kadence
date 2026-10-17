@@ -1,97 +1,82 @@
 import { Link } from "react-router-dom";
+import { Filter, Merge, Sigma, Upload, type LucideIcon } from "lucide-react";
+
+/** Decorative illustration of a pipeline; no real data is implied. */
+const pipelineSteps: { Icon: LucideIcon; label: string }[] = [
+  { Icon: Upload, label: "Import" },
+  { Icon: Filter, label: "Filter" },
+  { Icon: Merge, label: "Join" },
+  { Icon: Sigma, label: "Summarise" },
+];
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-16 overflow-hidden">
-      {/* Background */}
+    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 pb-16 pt-24">
       <div
+        aria-hidden="true"
         className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 100% 70% at 50% -10%, rgba(99,102,241,0.18) 0%, transparent 70%)",
-        }}
+        style={{ background: "radial-gradient(ellipse 100% 70% at 50% -10%, hsl(var(--primary) / 0.14) 0%, transparent 70%)" }}
       />
       <div
+        aria-hidden="true"
         className="pointer-events-none absolute inset-0 opacity-[0.035]"
         style={{
           backgroundImage:
-            "linear-gradient(var(--color-border) 1px, transparent 1px), linear-gradient(90deg, var(--color-border) 1px, transparent 1px)",
+            "linear-gradient(hsl(var(--text)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--text)) 1px, transparent 1px)",
           backgroundSize: "48px 48px",
         }}
       />
 
-      {/* Floating glow orbs */}
-      <div className="pointer-events-none absolute top-1/3 left-1/4 size-96 rounded-full bg-primary/5 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-1/4 right-1/4 size-64 rounded-full bg-accent/5 blur-3xl" />
-
-      <div className="relative z-10 max-w-4xl mx-auto text-center space-y-8">
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-primary/5 text-xs font-bold text-primary uppercase tracking-widest animate-in fade-in duration-700">
-          <span className="size-1.5 rounded-full bg-primary animate-pulse" />
-          AI-Powered Lakehouse Platform
-        </div>
-
-        {/* Headline */}
-        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100">
-          Transform Raw Data
-          <br />
-          <span className="text-primary">Into Intelligence</span>
-        </h1>
-
-        {/* Subheadline */}
-        <p className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
-          Kadence unifies data ingestion, schema management, visual analytics, and ML training
-          into one collaborative platform — from raw files to production predictions.
+      <div className="relative z-10 mx-auto max-w-4xl animate-slide-up space-y-8 text-center">
+        <p className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary-muted px-4 py-1.5 text-xs font-semibold text-primary">
+          <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+          Data workspace for teams
         </p>
 
-        {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
-          <Link
-            to="/signup"
-            className="btn btn-primary px-8 py-3 text-base font-bold shadow-2xl shadow-primary/20 hover:scale-[1.03] active:scale-[0.98] transition-transform"
-          >
-            Get Started Free
-          </Link>
-          <a
-            href="#features"
-            className="btn btn-secondary px-8 py-3 text-base font-semibold"
-          >
-            Explore Features →
-          </a>
+        <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
+          Shape your data.
+          <br />
+          <span className="text-primary">Ask it questions.</span>
+        </h1>
+
+        <p className="mx-auto max-w-2xl text-lg leading-relaxed text-text-secondary sm:text-xl">
+          Bring in files and databases, shape them step by step in Pipeline Studio, keep every import versioned, then
+          query with SQL and chart the results.
+        </p>
+
+        <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <Link to="/signup" className="btn btn-primary h-11 px-8 text-base">Create account</Link>
+          <a href="#how-it-works" className="btn btn-secondary h-11 px-8 text-base">See how it works</a>
         </div>
 
-        {/* Mock UI preview */}
-        <div className="mt-12 animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-500 max-w-3xl mx-auto">
-          <div className="card p-1.5 shadow-2xl shadow-black/30 border border-border">
-            {/* Fake window bar */}
-            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border-subtle">
-              <div className="size-2.5 rounded-full bg-danger/60" />
-              <div className="size-2.5 rounded-full bg-warning/60" />
-              <div className="size-2.5 rounded-full bg-success/60" />
-              <div className="ml-4 flex-1 h-4 rounded-full bg-surface-2 max-w-xs" />
+        <div aria-hidden="true" className="mx-auto mt-12 max-w-3xl">
+          <div className="card border-border p-1.5 shadow-soft-lg">
+            <div className="flex items-center gap-1.5 border-b border-border-subtle px-3 py-2">
+              <div className="size-2.5 rounded-full bg-surface-3" />
+              <div className="size-2.5 rounded-full bg-surface-3" />
+              <div className="size-2.5 rounded-full bg-surface-3" />
+              <div className="ml-4 h-4 max-w-xs flex-1 rounded-full bg-surface-2" />
             </div>
-            {/* Fake stats grid */}
-            <div className="p-4 grid grid-cols-4 gap-3">
-              {[
-                { label: "Datasets", value: "1,284", color: "text-primary" },
-                { label: "Pipelines", value: "47", color: "text-success" },
-                { label: "Models", value: "12", color: "text-accent" },
-                { label: "Accuracy", value: "94.8%", color: "text-warning" },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl bg-surface-2/60 border border-border-subtle p-3 text-center">
-                  <p className={`text-xl font-black ${s.color}`}>{s.value}</p>
-                  <p className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-0.5">{s.label}</p>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 p-4 sm:gap-3">
+              {pipelineSteps.map(({ Icon, label }, i) => (
+                <div key={label} className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm font-medium text-text">
+                    <Icon size={15} className="text-primary" />
+                    {label}
+                  </div>
+                  {i < pipelineSteps.length - 1 && <div className="h-px w-4 bg-border sm:w-8" />}
                 </div>
               ))}
             </div>
-            {/* Fake chart bars */}
-            <div className="px-4 pb-4 flex items-end gap-1.5 h-20">
-              {[60, 40, 75, 55, 90, 45, 80, 65, 95, 50, 70, 85].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-xs bg-primary/30"
-                  style={{ height: `${h}%` }}
-                />
+
+            <div className="space-y-2 px-4 pb-4">
+              {[1, 2, 3, 4].map((row) => (
+                <div key={row} className="grid grid-cols-4 gap-2">
+                  {[1, 2, 3, 4].map((col) => (
+                    <div key={col} className={`h-3 rounded-xs ${row === 1 ? "bg-primary/25" : "bg-surface-2"}`} />
+                  ))}
+                </div>
               ))}
             </div>
           </div>
