@@ -27,10 +27,16 @@ def upload_file(local_path: str, object_name: str) -> None:
     )
 
 
-def upload_staging_file(file_bytes: bytes, object_name: str) -> None:
+def upload_staging_stream(fileobj, object_name: str) -> int:
+    """Stream a file-like object to staging in 8MB parts (unknown length).
+    Returns the number of bytes uploaded."""
     ensure_bucket()
-    buf = io.BytesIO(file_bytes)
-    client.put_object(BUCKET_NAME, object_name, buf, len(file_bytes))
+    fileobj.seek(0)
+    client.put_object(
+        BUCKET_NAME, object_name, fileobj, length=-1, part_size=8 * 1024 * 1024
+    )
+    # put_object consumed the stream to EOF, so tell() is the byte size.
+    return fileobj.tell()
 
 
 def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -69,3 +75,8 @@ def download_staging_file(object_name: str, local_path: str) -> None:
 
 def delete_object(object_name: str) -> None:
     client.remove_object(BUCKET_NAME, object_name)
+
+
+def object_size(object_name: str) -> int:
+    """Byte size of a stored object (via stat)."""
+    return client.stat_object(BUCKET_NAME, object_name).size

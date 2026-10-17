@@ -27,21 +27,34 @@ from modules.ingestion.schema_inference import infer_schema
 from modules.ingestion.source_loader import load_source
 from modules.ingestion.schemas import (
     ColumnDiff,
+    CombineDatasetsRequest,
     CommitJobRequest,
     CreateIngestionJobRequest,
+    DatasetLineageResponse,
     DatasetResponse,
     DatasetVersionResponse,
     IngestionJobResponse,
+    LineageSource,
     ResolveSchemaMappingRequest,
     SchemaDiffResponse,
     StagedPreviewResponse,
     TransformPreviewRequest,
     TransformPreviewResponse,
 )
-from modules.ingestion.service import create_ingestion_job, resolve_schema_mapping
-from infrastructure.blob.minio_client import upload_staging_file
+from modules.ingestion.service import (
+    create_combine_job,
+    create_ingestion_job,
+    resolve_join_sources,
+    resolve_schema_mapping,
+)
+from infrastructure.blob.minio_client import delete_object, upload_staging_stream
 from modules.ingestion.tasks import run_ingestion_pipeline
-from modules.ingestion.transforms import OPS_CATALOG, apply_transforms, parse_steps
+from modules.ingestion.transforms import (
+    OPS_CATALOG,
+    TransformStepError,
+    apply_transforms,
+    parse_steps,
+)
 from modules.workspace.repository import get_workspace
 from sqlalchemy.orm import Session
 
@@ -110,12 +123,6 @@ async def create_job_from_file(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    file_bytes = await file.read()
-    if not file_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
-        )
-
     workspace = get_workspace(db, workspace_id, owner_id=user["sub"])
     if not workspace:
         raise HTTPException(
@@ -153,8 +160,16 @@ async def create_job_from_file(
     staging_path = (
         f"{dataset.workspace_id}/{dataset.id}/staging/{job.id}/source{ext}"
     )
-    upload_staging_file(file_bytes, staging_path)
-    file_size = len(file_bytes)
+    # Stream the upload to MinIO in chunks — never buffer the whole file in RAM.
+    file_size = upload_staging_stream(file.file, staging_path)
+    if file_size == 0:
+        try:
+            delete_object(staging_path)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
+        )
 
     # Parse to get row count for metadata (also converts to Parquet for DuckDB).
     temp_df = load_source(job, nrows=1)  # quick schema peek
@@ -241,22 +256,49 @@ async def list_ops():
 # ── Transform preview ──────────────────────────────────────────────────────────
 
 @router.post("/transforms/preview", response_model=TransformPreviewResponse)
-async def transform_preview(payload: TransformPreviewRequest):
+async def transform_preview(
+    payload: TransformPreviewRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     """Apply transform steps to a sampled table and return the result.
 
     Used by the frontend when the user clicks "Apply" to see updated results,
-    or when a step's local apply() is unavailable.
+    or when a step's local apply() is unavailable. Join steps resolve + authorize
+    the referenced dataset (unauthorized/missing → 404) and read the right side
+    (capped at 100k rows for preview) via DuckDB.
     """
     df = pd.DataFrame(payload.rows, columns=payload.columns)
     steps_dicts = [
         s.model_dump() if hasattr(s, "model_dump") else s for s in payload.steps
     ]
+
+    # Resolve + authorize any join right datasets before applying (404 propagates).
+    join_sources = resolve_join_sources(db, payload.steps, owner_id=user["sub"])
+
+    def join_loader(step):
+        from infrastructure.duckdb import connect, s3_uri
+        path = join_sources[str(step.dataset_id)]
+        con = connect()
+        try:
+            return con.execute(
+                f"SELECT * FROM read_parquet('{s3_uri(path)}') LIMIT 100000"
+            ).df()
+        finally:
+            con.close()
+
     try:
-        result = apply_transforms(df, steps_dicts)
+        result = apply_transforms(df, steps_dicts, join_loader=join_loader)
         rows = result.where(result.notna(), None).values.tolist()
         return TransformPreviewResponse(
             columns=list(result.columns),
             rows=rows,
+        )
+    except TransformStepError as e:
+        return TransformPreviewResponse(
+            columns=payload.columns,
+            rows=payload.rows,
+            errors={e.step_index: str(e)},
         )
     except Exception as e:
         return TransformPreviewResponse(
@@ -284,9 +326,30 @@ async def commit_job(
             detail=f"Job is not awaiting commit (status={job.status.value})",
         )
 
-    repo.set_transform_plan(db, job_id, [s.model_dump() for s in payload.transforms])
+    # mode="json": join steps carry a uuid.UUID dataset_id — plain model_dump() leaves
+    # it as a UUID object, which the JSONB column's json.dumps can't serialize.
+    repo.set_transform_plan(db, job_id, [s.model_dump(mode="json") for s in payload.transforms])
     run_ingestion_pipeline.delay(str(job_id))
     return _job_to_response(repo.get_job(db, job_id))
+
+
+# ── Ad-hoc combine of existing datasets (no fresh import required) ─────────────
+
+
+@router.post(
+    "/jobs/combine", response_model=IngestionJobResponse, status_code=status.HTTP_202_ACCEPTED
+)
+async def combine_datasets(
+    payload: CombineDatasetsRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Join one or more owned datasets against a primary dataset and save the
+    result as a new (or existing) dataset — reuses the same background pipeline
+    as an import commit, so it scales identically."""
+    job = create_combine_job(db, payload, owner_id=user["sub"])
+    run_ingestion_pipeline.delay(str(job.id))
+    return _job_to_response(job)
 
 
 # ── Submit schema resolution ──────────────────────────────────────────────────
@@ -372,6 +435,59 @@ async def list_versions(
     assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
     versions = repo.list_versions(db, dataset_id)
     return [DatasetVersionResponse.model_validate(v) for v in versions]
+
+
+# ── Data lineage (single-hop; frontend recurses for multi-hop) ─────────────────
+
+
+@router.get("/datasets/{dataset_id}/lineage", response_model=DatasetLineageResponse)
+async def get_dataset_lineage(
+    dataset_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Where this dataset originally came from (source_type + origin_detail, e.g. a DB
+    table name) plus any join steps in the job that produced its latest version. Only
+    the immediate join sources — the frontend calls this again per source dataset_id
+    to walk further back and render a multi-hop lineage graph."""
+    dataset = assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
+    latest = repo.get_latest_version(db, dataset_id)
+    job = repo.get_latest_success_job(db, dataset_id)
+    first_job = repo.get_first_success_job(db, dataset_id)
+
+    # Table name only — never expose credentials, even though the password field
+    # is encrypted at rest, this endpoint has no reason to touch it.
+    origin_detail = (
+        (first_job.source_config or {}).get("table") if first_job and first_job.source_config else None
+    )
+
+    sources: list[LineageSource] = []
+    transforms = (job.source_config or {}).get("_transforms") if job else None
+    for step in transforms or []:
+        if (step or {}).get("type") != "join":
+            continue
+        src_id = step.get("dataset_id")
+        if not src_id:
+            continue
+        src_dataset = repo.get_dataset(db, uuid.UUID(str(src_id)))
+        if not src_dataset:
+            continue
+        sources.append(LineageSource(
+            dataset_id=src_dataset.id,
+            dataset_name=src_dataset.name,
+            how=step.get("how", "inner"),
+            left_on=step.get("left_on", ""),
+            right_on=step.get("right_on", ""),
+        ))
+
+    return DatasetLineageResponse(
+        dataset_id=dataset.id,
+        dataset_name=dataset.name,
+        source_type=dataset.source_type,
+        origin_detail=origin_detail,
+        version=latest.version if latest else None,
+        sources=sources,
+    )
 
 
 # ── Get latest schema / diff ──────────────────────────────────────────────────

@@ -131,6 +131,34 @@ def get_pending_schema(db: Session, job_id: uuid.UUID) -> dict | None:
     return None
 
 
+def get_latest_success_job(db: Session, dataset_id: uuid.UUID) -> IngestionJob | None:
+    """Most recent SUCCESS job for a dataset — the job whose transform plan (if any
+    join steps) produced the current latest version. Powers lineage lookups."""
+    return (
+        db.query(IngestionJob)
+        .filter(
+            IngestionJob.dataset_id == dataset_id,
+            IngestionJob.status == JobStatus.SUCCESS,
+        )
+        .order_by(IngestionJob.created_at.desc())
+        .first()
+    )
+
+
+def get_first_success_job(db: Session, dataset_id: uuid.UUID) -> IngestionJob | None:
+    """First SUCCESS job for a dataset — carries the original import's source_config
+    (e.g. DB table name), for showing where the data originally came from."""
+    return (
+        db.query(IngestionJob)
+        .filter(
+            IngestionJob.dataset_id == dataset_id,
+            IngestionJob.status == JobStatus.SUCCESS,
+        )
+        .order_by(IngestionJob.created_at.asc())
+        .first()
+    )
+
+
 def get_latest_pending_job(db: Session, dataset_id: uuid.UUID) -> IngestionJob | None:
     """Most recent PENDING job for a dataset (used to surface the incoming schema diff)."""
     return (

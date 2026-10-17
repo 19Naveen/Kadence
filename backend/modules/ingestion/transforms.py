@@ -10,7 +10,8 @@ Public API:
     OPS_CATALOG -> dict                                    # canonical op definitions for the UI
 """
 
-from typing import Annotated, Any, Literal, Union
+import uuid
+from typing import Annotated, Any, Callable, Literal, Optional, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
@@ -189,6 +190,16 @@ class DatepartStep(BaseModel):
     part: Literal["year", "month", "day"]
 
 
+# ── Combine ──
+
+class JoinStep(BaseModel):
+    type: Literal["join"]
+    dataset_id: uuid.UUID
+    left_on: str
+    right_on: str
+    how: Literal["inner", "left", "right", "full"] = "inner"
+
+
 # ── Union ──────────────────────────────────────────────────────────────────────
 
 TransformStep = Annotated[
@@ -198,7 +209,7 @@ TransformStep = Annotated[
         UpperStep, LowerStep, CapitalizeStep, TrimStep, ReplaceStep,
         SplitStep, ExtractStep, LengthStep,
         RoundStep, AbsStep, MathStep, ZscoreStep,
-        DatepartStep,
+        DatepartStep, JoinStep,
     ],
     Field(discriminator="type"),
 ]
@@ -212,7 +223,7 @@ _STEP_MODELS = (
     UpperStep, LowerStep, CapitalizeStep, TrimStep, ReplaceStep,
     SplitStep, ExtractStep, LengthStep,
     RoundStep, AbsStep, MathStep, ZscoreStep,
-    DatepartStep,
+    DatepartStep, JoinStep,
 )
 
 # ── Step type keys ─────────────────────────────────────────────────────────────
@@ -241,11 +252,38 @@ _FILTER_OPS = {
 }
 
 
-def apply_transforms(df: pd.DataFrame, steps) -> pd.DataFrame:
-    """Apply transform steps in order, returning a new DataFrame (input untouched)."""
+def apply_transforms(
+    df: pd.DataFrame,
+    steps,
+    join_loader: Optional[Callable[["JoinStep"], pd.DataFrame]] = None,
+) -> pd.DataFrame:
+    """Apply transform steps in order, returning a new DataFrame (input untouched).
+
+    `join_loader(step) -> pd.DataFrame` resolves the right-hand frame for a join
+    step; required whenever the plan contains a join.
+    """
     out = df.copy()
     for i, raw_step in enumerate(steps):
         step = _coerce(raw_step)
+        # ── Combine ──
+        if isinstance(step, JoinStep):
+            if step.left_on not in out.columns:
+                continue  # missing left key → skip, like other missing-column ops
+            if join_loader is None:
+                raise TransformStepError(i, "join requires a loader")
+            right = join_loader(step)
+            if step.right_on not in right.columns:
+                raise TransformStepError(
+                    i, f"right dataset has no column '{step.right_on}'"
+                )
+            how = "outer" if step.how == "full" else step.how
+            out = pd.merge(
+                out, right,
+                left_on=step.left_on, right_on=step.right_on,
+                how=how, suffixes=("", "_right"),
+            )
+            continue
+
         # ── Columns ──
         if isinstance(step, DropStep):
             if step.column in out.columns:
@@ -544,6 +582,16 @@ def _build_catalog() -> dict:
                 {"key": "part", "label": "Part", "kind": "select", "options": ["year", "month", "day"]},
             ],
             "lbl_template": "Extract {part} from {column}",
+        },
+        "join": {
+            "cat": "Combine", "label": "Join Dataset", "desc": "Combine rows from another dataset on a key",
+            "fields": [
+                {"key": "dataset_id", "label": "Dataset", "kind": "dataset"},
+                {"key": "left_on", "label": "This column", "kind": "column"},
+                {"key": "right_on", "label": "Other column", "kind": "column_right"},
+                {"key": "how", "label": "Join type", "kind": "select", "options": ["inner", "left", "right", "full"]},
+            ],
+            "lbl_template": "Join {how} on {left_on}={right_on}",
         },
     }
 

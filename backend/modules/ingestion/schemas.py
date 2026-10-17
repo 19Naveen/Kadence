@@ -99,6 +99,23 @@ class CommitJobRequest(BaseModel):
     transforms: list[TransformStep] = Field(default_factory=list)
 
 
+class CombineDatasetsRequest(BaseModel):
+    """Ad-hoc combine of an already-imported dataset with others via join steps,
+    saved as a new dataset or a new version of an existing one (no fresh import)."""
+    workspace_id: uuid.UUID
+    primary_dataset_id: uuid.UUID
+    transforms: list[TransformStep] = Field(default_factory=list)
+    new_dataset_name: str | None = Field(default=None, min_length=1, max_length=255)
+    target_dataset_id: uuid.UUID | None = None
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "CombineDatasetsRequest":
+        if bool(self.new_dataset_name) == bool(self.target_dataset_id):
+            raise ValueError("Provide exactly one of new_dataset_name or target_dataset_id")
+        return self
+
+
 class ResolveSchemaMappingRequest(BaseModel):
     rules: list[MappingRuleRequest]
     accept_new_schema: bool = False
@@ -145,6 +162,28 @@ class TransformPreviewResponse(BaseModel):
     columns: list[str]
     rows: list[list]
     errors: dict[int, str] = Field(default_factory=dict)
+
+
+class LineageSource(BaseModel):
+    """One immediate join edge feeding into a dataset's latest version."""
+    dataset_id: uuid.UUID
+    dataset_name: str
+    how: str
+    left_on: str
+    right_on: str
+
+
+class DatasetLineageResponse(BaseModel):
+    """Single-hop lineage: where this dataset originally came from (source_type +
+    origin_detail, e.g. a DB table name) plus the datasets joined into its latest
+    version, per the most recent successful ingestion job's transform plan. The
+    frontend recurses (calling this endpoint again per source) for a multi-hop graph."""
+    dataset_id: uuid.UUID
+    dataset_name: str
+    source_type: str
+    origin_detail: str | None = None
+    version: int | None
+    sources: list[LineageSource]
 
 
 class DatasetVersionResponse(BaseModel):
