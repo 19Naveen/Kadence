@@ -50,6 +50,34 @@ def test_commit_persists_plan_and_dispatches(monkeypatch):
     assert resp.status == "PENDING"
 
 
+def test_commit_persists_join_step_as_json_serializable(monkeypatch):
+    """Regression guard: JoinStep.dataset_id is a uuid.UUID. Plain model_dump() leaves
+    it as a UUID object, which crashes the JSONB column's json.dumps at commit time —
+    caught only by actually serializing the captured plan, not by asserting equality
+    against a dict (a UUID and its str form compare unequal to a plain dict check but
+    a naive test could still pass if it doesn't attempt real JSON encoding)."""
+    import json
+    import uuid as uuid_mod
+
+    job = _commit_job()
+    monkeypatch.setattr(repo, "get_job", lambda db, jid: job)
+    monkeypatch.setattr(router_mod, "assert_job_owned", lambda db, jid, owner_id: job)
+    recorded = {}
+    monkeypatch.setattr(repo, "set_transform_plan", lambda db, jid, plan: recorded.update(plan=plan))
+    monkeypatch.setattr(router_mod, "run_ingestion_pipeline",
+                        SimpleNamespace(delay=lambda jid: recorded.update(dispatched=jid)))
+
+    join_dataset_id = uuid_mod.uuid4()
+    payload = CommitJobRequest(transforms=[{
+        "type": "join", "dataset_id": str(join_dataset_id),
+        "left_on": "id", "right_on": "id", "how": "inner",
+    }])
+    _run_commit(job.id, payload)
+
+    json.dumps(recorded["plan"])  # raises TypeError if dataset_id is still a UUID object
+    assert recorded["plan"][0]["dataset_id"] == str(join_dataset_id)
+
+
 def test_commit_404_when_missing(monkeypatch):
     monkeypatch.setattr(repo, "get_job", lambda db, jid: None)
     with pytest.raises(HTTPException) as exc:
@@ -119,7 +147,7 @@ def test_pipeline_applies_transform_plan(monkeypatch):
         ),
     )
     monkeypatch.setattr(repo, "create_dataset_version", lambda db, payload: captured.update(version=payload))
-    monkeypatch.setattr("modules.ingestion.storage.minio_client.delete_object", lambda p: None)
+    monkeypatch.setattr("infrastructure.blob.minio_client.delete_object", lambda p: None)
 
     result = tasks_mod.run_ingestion_pipeline(str(jid))
 
