@@ -37,7 +37,7 @@ const navGroups = [
 ] as const;
 
 /** Routes that manage their own full-height layout (no page padding / max width). */
-const FULL_BLEED = ["/app/data-transform", "/app/query-studio"];
+const FULL_BLEED = ["/app/data-import", "/app/data-transform", "/app/query-studio"];
 const COLLAPSE_KEY = "kadence.sidebar.collapsed";
 
 function readCollapsed(): boolean {
