@@ -13,9 +13,9 @@ def load_source(job, nrows: int | None = None) -> pd.DataFrame:
     return _load_source(job, nrows=nrows)
 
 
-def apply_transforms(data: pd.DataFrame, steps: list) -> pd.DataFrame:
+def apply_transforms(data: pd.DataFrame, steps: list, join_loader=None) -> pd.DataFrame:
     """Apply transform steps in order, returning a new DataFrame (input untouched)."""
-    return _apply_transforms(data, steps)
+    return _apply_transforms(data, steps, join_loader=join_loader)
 
 
 def infer_schema(data: pd.DataFrame) -> dict[str, str]:

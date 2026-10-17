@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = Field(..., env="MINIO_SECRET_KEY")
     RABBITMQ_URL: str = Field(..., env="RABBITMQ_URL")
     CREDENTIALS_ENCRYPTION_KEY: str = Field(..., env="CREDENTIALS_ENCRYPTION_KEY")
+    # Staging files larger than this (bytes) use the streaming DuckDB transform
+    # engine instead of the in-memory pandas engine. Default 500 MiB.
+    TRANSFORM_ENGINE_THRESHOLD_BYTES: int = 524288000
 
     class Config:
         env_file = ".env"

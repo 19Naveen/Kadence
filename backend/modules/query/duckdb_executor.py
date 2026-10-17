@@ -8,11 +8,8 @@ into Postgres and nothing is staged on local disk.
 
 import uuid
 
-import duckdb
-
-from core.config import settings
 from modules.ingestion import repository as repo
-from infrastructure.blob.minio_client import BUCKET_NAME
+from infrastructure.duckdb import connect as _connect, s3_uri as _s3_uri
 
 # Aggregations allowed in the EDA aggregate endpoint, mapped to SQL templates.
 ALLOWED_AGGREGATIONS = {
@@ -22,32 +19,6 @@ ALLOWED_AGGREGATIONS = {
     "min": "MIN({measure})",
     "max": "MAX({measure})",
 }
-
-
-def _connect() -> duckdb.DuckDBPyConnection:
-    """Open an in-memory DuckDB connection wired to the MinIO S3 endpoint."""
-    con = duckdb.connect(database=":memory:")
-    try:
-        con.execute("INSTALL httpfs;")
-    except Exception:
-        # Already installed / bundled — autoloaded builds raise here harmlessly.
-        pass
-    con.execute("LOAD httpfs;")
-    con.execute("SET s3_url_style='path';")
-    con.execute("SET s3_use_ssl=false;")
-    con.execute("SET s3_region='us-east-1';")
-    con.execute(f"SET s3_endpoint='{settings.MINIO_ENDPOINT}';")
-    con.execute(f"SET s3_access_key_id='{settings.MINIO_ACCESS_KEY}';")
-    con.execute(f"SET s3_secret_access_key='{settings.MINIO_SECRET_KEY}';")
-    # Lock the configuration last so a subsequently-executed user query cannot
-    # re-enable dangerous settings (e.g. flipping to a different S3 endpoint, or
-    # toggling extension auto-install) via `SET ...` / `PRAGMA ...`.
-    con.execute("SET lock_configuration=true;")
-    return con
-
-
-def _s3_uri(storage_path: str) -> str:
-    return f"s3://{BUCKET_NAME}/{storage_path}"
 
 
 def resolve_latest(db, dataset_id: uuid.UUID):
