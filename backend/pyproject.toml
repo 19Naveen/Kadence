@@ -23,6 +23,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.2.2",
     "python-jose[cryptography]>=3.5.0",
+    "python-multipart>=0.0.29",
     "redis>=7.4.0",
     "scikit-learn>=1.8.0",
     "seaborn>=0.13.2",
