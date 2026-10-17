@@ -8,6 +8,7 @@ __pycache__/
 model
 
 .env
+minio.license
 db.db
 Data/CSV/*
 Data/Processed_Data/*

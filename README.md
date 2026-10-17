@@ -83,7 +83,7 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 | Service | Port(s) | Purpose |
 |---|---|---|
 | PostgreSQL 16 | 5432 | Metadata storage |
-| MinIO | 9000 (API), 9001 (Console) | Parquet file storage |
+| MinIO (AIStor Free) | 9000 (API), 9001 (Console) | Parquet file storage |
 | RabbitMQ 3.13 | 5672 (AMQP), 15672 (Management) | Celery task broker |
 
 ---
@@ -93,6 +93,8 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 ### Prerequisites
 
 - Python 3.14+, Node.js 18+, Docker + Docker Compose, `uv`
+- AIStor Free license: get one from https://min.io/download and save it as `minio.license` in the
+  repo root (gitignored). Upstream `minio/minio` images are no longer published.
 
 ### Run everything
 
@@ -143,6 +145,11 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
 ---
 
 ## Changelog
+
+### 2026-10-18 — MinIO image switched to AIStor Free
+
+- `minio/minio` is unmaintained and no longer pullable from Docker Hub or Quay; `docker-compose.yml`
+  now uses `quay.io/minio/aistor/minio` with `./minio.license` mounted read-only (gitignored)
 
 ### 2026-07-16 — Pipeline Studio: DuckDB scale engine + cross-dataset joins
 

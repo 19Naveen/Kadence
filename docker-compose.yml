@@ -1,9 +1,10 @@
 services:
 
   minio:
-    image: minio/minio
+    # minio/minio is no longer published; AIStor Free needs ./minio.license (free from min.io)
+    image: quay.io/minio/aistor/minio:latest
     container_name: minio
-    command: server /data --console-address ":9001"
+    command: minio server /data --console-address ":9001" --license /minio.license
 
     environment:
       MINIO_ROOT_USER: admin
@@ -15,6 +16,7 @@ services:
 
     volumes:
       - minio_data:/data
+      - ./minio.license:/minio.license:ro
 
   postgres:
     image: postgres:16
