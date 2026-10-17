@@ -69,7 +69,7 @@ An AI-powered lakehouse data platform that enables users to ingest, transform, q
 | Task Queue | Celery 5 + RabbitMQ |
 | Metadata DB | PostgreSQL 16 (SQLAlchemy 2.0, Alembic) |
 | Object Storage | MinIO (S3-compatible) |
-| Columnar Compute | DuckDB, PyArrow, Pandas |
+| Columnar Compute | DuckDB, PyArrow, Pandas — DuckDB powers both live AI Query reads and, above a configurable size threshold, large-scale (10-100GB) ingestion transform execution directly against MinIO |
 | ML | scikit-learn, XGBoost |
 | Auth | JWT (python-jose + bcrypt) |
 | Package Managers | uv (backend), npm (frontend) |
@@ -100,7 +100,8 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 make run
 ```
 
-Starts Docker services, FastAPI backend, and React frontend. Ctrl+C stops all.
+Starts Docker services, applies pending database migrations (`alembic upgrade head`), then FastAPI
+backend and React frontend. Ctrl+C stops all.
 
 ### Individual commands
 
@@ -142,6 +143,22 @@ For full setup details see [backend/README.md](./backend/README.md) and [fronten
 ---
 
 ## Changelog
+
+### 2026-07-16 — Pipeline Studio: DuckDB scale engine + cross-dataset joins
+
+- Ingestion transform runs above a configurable size threshold now execute on a streaming DuckDB
+  engine (reading/writing Parquet directly against MinIO) instead of pandas, so imports scale
+  from MB up to 10-100GB without buffering the dataset in memory; file uploads also now stream to
+  storage instead of buffering in RAM. The transform builder ("Pipeline Studio", née Data
+  Transform) gained a cross-dataset `join` step. Platform-wide change — see `backend/README.md`
+  and `frontend/README.md` for full detail.
+
+### 2026-07-16 — Makefile applies Alembic migrations on startup
+
+- `make run` and `make backend` now run `alembic upgrade head` in `backend/` right after Docker
+  services are up, before starting the API server. Required now that `backend/main.py` no longer
+  calls `Base.metadata.create_all()` — a fresh database has no tables until migrations run. See
+  `backend/README.md` § Database Migrations.
 
 ### 2026-07-10 — Backend knowledge base wiki added
 

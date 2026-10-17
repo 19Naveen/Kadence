@@ -101,6 +101,7 @@ Store in `backend/.env` (never commit this file).
 | `CREDENTIALS_ENCRYPTION_KEY` | `<Fernet key>` | Fernet key used to encrypt DB source passwords at rest. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | JWT expiry in minutes |
 | `LOG_LEVEL` | `info` | Uvicorn log level |
+| `TRANSFORM_ENGINE_THRESHOLD_BYTES` | `524288000` | Staging file size (bytes) above which transform runs use the streaming DuckDB engine instead of pandas. Default 500 MiB. |
 
 ---
 
@@ -211,24 +212,48 @@ Validate target workspace exists and is owned by the current user (404 otherwise
         ↓
 Create Dataset (if new) → Create IngestionJob (PENDING) in PostgreSQL
         ↓
-[File sources] Upload raw file to MinIO staging path
+[File sources] Stream raw file to MinIO staging path in 8MB chunks (never buffered in RAM)
+        ↓
+User builds a transform plan in Pipeline Studio against a staged preview, then commits
         ↓
 Dispatch run_ingestion_pipeline.delay(job_id) via RabbitMQ
         ↓
 Celery Worker:
   Mark RUNNING
-  Load source → pd.DataFrame (via connector)
-  infer_schema(df) → {"col": "type"}
-  get_latest_version → compare schemas
+  select_engine(staging_metadata) → pandas (≤ threshold) or DuckDB (> threshold)
+  [pandas]  Load source → pd.DataFrame → apply_transforms (steps, incl. join) → Parquet (PyArrow) → MinIO
+  [DuckDB]  Single fused SQL run: read staged source → compiled step SQL (incl. JOIN) →
+            COPY ... TO 's3://.../raw/v{n}/data.parquet' directly against MinIO, streaming —
+            never materializes the full dataset in memory
+  get_latest_version → compare schemas (skipped on the DuckDB fused path's first run of a plan)
   If diff & no rules → store pending schema, mark PENDING (await /resolve)
   If rules exist    → apply_rules(df, rules) → re-infer schema
-  Write DataFrame → Parquet (PyArrow)
-  upload_dataframe_as_parquet → MinIO (immutable, versioned path)
   create_dataset_version in PostgreSQL
   Mark SUCCESS
   Delete staging file from MinIO
-On exception → mark FAILED with error_message
+On exception → mark FAILED with error_message (DuckDB SQL errors are mapped back to the
+  failing step index via TransformStepError)
 ```
+
+#### Transform Engine Selection
+
+`modules/ingestion/engine/select.py` picks the execution engine per job from
+`staging_metadata.file_size`:
+
+| Staged file size | Engine | Notes |
+|---|---|---|
+| ≤ `TRANSFORM_ENGINE_THRESHOLD_BYTES` (default 500 MiB) | Pandas (`engine/pandas_engine.py`) | Whole dataset in memory; exact parity with the live `/transforms/preview` endpoint. |
+| > threshold, or file_size unknown falls back to pandas | DuckDB (`engine/duckdb_engine.py`) | Streams `read_csv`/`read_parquet`/`read_xlsx` (via pandas for xlsx) → compiled SQL → `COPY TO 's3://...'` directly against MinIO. No dataset size limit within reason — data is never fully materialized in RAM. |
+
+The DuckDB engine exposes the same callable-dict contract as pandas
+(`load_source`, `apply_transforms`, `infer_schema`, `write_parquet`, `row_count`,
+`column_count`) plus a fused `run(job, transforms, storage_path)` that `tasks.py`
+prefers when present, executing load→transform→write as one SQL statement instead of
+per-step calls. Every one of the 23 transform ops (plus `join`) is compiled to SQL by
+`modules/ingestion/engine/sql_compiler.py`, which chains one CTE per step and mirrors
+pandas' "skip step if referenced column is missing" semantics. DuckDB is the deliberate
+scale ceiling for this pipeline — single-node, streaming, spills to disk for 10–100GB
+runs; no Spark/cluster engine.
 
 #### Supported Sources
 
@@ -257,13 +282,19 @@ PENDING (awaiting schema resolution) → user calls /resolve → RUNNING → SUC
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | POST | `/jobs` | Yes | Create job from DB source (JSON). Validates the target workspace exists and is owned by the caller (404 `Workspace not found` otherwise) before creating the dataset/job. |
-| POST | `/jobs/upload` | Yes | Create job from file (multipart). Same workspace-ownership validation as `/jobs`. |
+| POST | `/jobs/upload` | Yes | Create job from file (multipart). Same workspace-ownership validation as `/jobs`. Streams the upload straight to MinIO staging in 8MB chunks via `upload_staging_stream` (no full-file buffering); `staging_metadata.file_size` is the actual streamed byte count, computed after upload. Empty upload → 400. |
 | GET | `/jobs/{job_id}` | Yes | Poll job status |
+| GET | `/jobs/{job_id}/staged-preview` | Yes | Sample rows + inferred schema of the staged source, for Pipeline Studio |
+| GET | `/transforms/ops` | Yes | Canonical transform op catalog (`OPS_CATALOG`), incl. the `join` op |
+| POST | `/transforms/preview` | Yes | Apply a transform plan to a sampled table and return the result. Auth-gated (`db` + `get_current_user`) so `join` steps can resolve and authorize their right-hand dataset via `resolve_join_sources` — unauthorized or missing dataset → 404 `Dataset not found` (no 403, no existence leak). Right side capped at 100k rows for preview only. |
+| POST | `/jobs/{job_id}/commit` | Yes | Persist the transform plan and dispatch `run_ingestion_pipeline` |
+| POST | `/jobs/combine` | Yes | Ad-hoc combine of one or more already-imported datasets — no fresh import required. Builds an `IngestionJob` whose `staging_path` is the primary dataset's latest version file instead of an upload, then reuses `run_ingestion_pipeline` unmodified. Result is saved as a new dataset (`new_dataset_name`) or a new version of an existing one (`target_dataset_id`) — exactly one must be provided. |
 | POST | `/jobs/{job_id}/resolve` | Yes | Resolve a schema diff: submit mapping rules **or** `accept_new_schema`, then re-dispatch |
 | GET | `/datasets` | Yes | List datasets in a workspace (with version count + latest stats) |
 | DELETE | `/datasets/{dataset_id}` | Yes | Delete dataset + versions + MinIO objects |
 | GET | `/datasets/{dataset_id}/versions` | Yes | List all versions |
 | GET | `/datasets/{dataset_id}/schema` | Yes | Get latest schema and diff |
+| GET | `/datasets/{dataset_id}/lineage` | Yes | Where this dataset originally came from (`source_type` + `origin_detail`, e.g. a DB table name from `repo.get_first_success_job`) plus single-hop join sources feeding its latest version (from `repo.get_latest_success_job`'s transform plan). No recursion server-side — the frontend calls this again per source `dataset_id` to walk further back and render a multi-hop lineage graph. Never exposes DB credentials, only the table name. |
 
 #### Schema Inference
 
@@ -320,17 +351,50 @@ bucket: datasets
 
 ---
 
-### 3. Data Transform
+### 3. Data Transform (Pipeline Studio)
 
-**Prefix:** `/api/v1/transform` — Stub
+**Prefix:** `/api/v1/data-ingest` (`/transforms/*`, `/jobs/{job_id}/commit`) — not a separate
+router; lives alongside Data Ingestion Pipeline above.
 
-Applies transformation steps to versioned datasets. Output is a new immutable version.
+An ordered list of typed steps (`modules/ingestion/transforms.py`) built in the frontend's
+Pipeline Studio against a staged preview, then applied to the **entire** staged dataset on
+commit. Output is a new immutable `DatasetVersion`. Engine choice is transparent to the
+caller — see Transform Engine Selection above; this section covers the step catalog and joins.
 
-| Data Size | Engine |
-|---|---|
-| < 1 GB | Pandas |
-| 1–10 GB | DuckDB |
-| 10 GB+ | Spark |
+23 ops across categories Columns / Rows / Text / Numeric / Date & Time, plus:
+
+**`join` (category Combine)** — combine the in-progress dataset with another dataset owned by
+the caller:
+
+```json
+{"type": "join", "dataset_id": "<uuid>", "left_on": "col_a", "right_on": "col_b", "how": "inner|left|right|full"}
+```
+
+- Right side always resolves to the referenced dataset's **latest version** parquet
+  (`service.resolve_join_sources`).
+- **Ownership enforced** wherever a plan is accepted: `/transforms/preview` (via `db` +
+  `get_current_user` deps) and at commit/run time. An unowned or missing `dataset_id` raises
+  404 `Dataset not found` — never 403, so the caller can't distinguish "not yours" from
+  "doesn't exist".
+- Pandas engine: right side read via DuckDB into a DataFrame (preview capped at 100k rows;
+  full runs uncapped), then `pd.merge(..., suffixes=("", "_right"))`. `how="full"` maps to
+  pandas' `outer`.
+- DuckDB engine: compiled to a native SQL `JOIN` against `read_parquet('s3://...')`, with
+  explicit right-column aliasing to match the pandas `_right` suffix rule.
+- If the left key column is missing, the join step is skipped (same "skip if column missing"
+  semantics as every other op); if the *right* dataset lacks `right_on`, the step raises
+  `TransformStepError`.
+
+**Ad-hoc combine of existing datasets** (`POST /jobs/combine`) — join steps normally only run
+as part of a fresh import's transform plan. `/jobs/combine` lets a user pick an
+already-imported "primary" dataset directly (no import needed), add `join` steps against other
+owned datasets, and save the result as a new dataset or a new version of an existing one. It
+works by pointing a synthetic `IngestionJob.staging_path` at the primary dataset's latest
+version file instead of an upload — `run_ingestion_pipeline` needs no changes, since a
+dataset's parquet and a staging upload are both just object keys in the same MinIO bucket. The
+one hazard this exposes: the pipeline normally deletes `staging_path` after a successful run
+(cleanup for ephemeral uploads); the delete is now guarded to only fire for paths under
+`.../staging/...`, never for a combine job's permanent `.../raw/v{n}/...` source file.
 
 ---
 
@@ -433,6 +497,27 @@ MinIO bucket: datasets
 | `workspaces` | Workspace | Workspace registry |
 | `workspace_members` | Workspace | User ↔ workspace membership and roles |
 
+## Database Migrations
+
+Schema changes are managed with **Alembic**, not `Base.metadata.create_all()` (removed from
+`main.py` — it only creates missing tables and silently ignores column changes on existing ones,
+which caused a production 500 when a model gained a column the live DB didn't have).
+
+```bash
+# After editing a model in modules/*/models.py:
+alembic revision --autogenerate -m "add staging_metadata to ingestion_jobs"
+# Review the generated file in alembic/versions/, then:
+alembic upgrade head
+```
+
+- `alembic/env.py` imports `core.database.Base` plus every module's `models.py` and reads the DB
+  URL from `core.config.settings` (not `alembic.ini`), so it always targets the same database as
+  the app.
+- Any new `modules/<name>/models.py` file must be imported in `alembic/env.py` or its tables won't
+  be picked up by `--autogenerate`.
+- Baseline migration `6455dd9affdd` was stamped (not applied) against the existing DB, since the
+  tables already existed from the old `create_all()` bootstrap.
+
 ---
 
 ## Celery Worker
@@ -452,6 +537,67 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-07-19 — Data lineage endpoint + fix: join step's right-side key defaulted to empty
+
+- New `GET /datasets/{dataset_id}/lineage`: returns where a dataset originally came from
+  (`source_type`, and `origin_detail` — the DB table name for DB-sourced datasets, from
+  `get_first_success_job`; never credentials) plus the immediate join sources (dataset, join
+  type, keys) behind its latest version, read from `get_latest_success_job`'s transform plan.
+  Single-hop only by design — the frontend recurses per source to build a multi-hop lineage
+  graph, so no backend changes are needed if the UI wants to go deeper later.
+- Unrelated frontend bug also fixed this session: the join builder's `right_on` field (kind
+  `column_right`) never got a default once the right dataset's columns loaded, so a join step
+  could be committed with `right_on: ""`, producing a `"right dataset has no column ''"` error
+  at run time. See `frontend/README.md`.
+
+### 2026-07-19 — Ad-hoc combine of existing datasets (`POST /jobs/combine`)
+
+- New endpoint lets a user join already-imported datasets together and save the result as a
+  new (or existing) dataset, without running a fresh import first. `service.create_combine_job`
+  builds an `IngestionJob` whose `staging_path` is the primary dataset's latest version's
+  `storage_path` — `run_ingestion_pipeline`, `resolve_join_sources`, engine selection, and the
+  TOCTOU join re-auth all run completely unmodified.
+- `tasks.run_ingestion_pipeline`'s post-success staging-file delete is now guarded to only fire
+  for paths under `.../staging/...`, so a combine job never deletes its (permanent) source
+  dataset file.
+- See `frontend/README.md` for the matching Preview-tab "Save as dataset" UI.
+
+### 2026-07-16 — Pipeline Studio: DuckDB engine for 10-100GB scale + cross-dataset joins
+
+- **Streaming upload:** `create_job_from_file` no longer buffers the whole upload in memory.
+  `infrastructure/blob/minio_client.upload_staging_stream` streams `UploadFile.file` straight to
+  MinIO staging in 8MB parts (`put_object(..., length=-1, part_size=8MB)`); `file_size` is the
+  actual streamed byte count. Empty upload still → 400.
+- **DuckDB transform engine for large runs:** `modules/ingestion/engine/select.py` now picks
+  pandas (in-memory, exact preview parity) for staged files `<= TRANSFORM_ENGINE_THRESHOLD_BYTES`
+  (new setting, default 500 MiB) and a new streaming `duckdb_engine.py` above it. The DuckDB
+  engine compiles the saved transform-step plan to chained-CTE SQL
+  (`modules/ingestion/engine/sql_compiler.py`, all 23 ops) and runs
+  `read_csv/parquet/xlsx(s3://staging) → steps → COPY TO 's3://.../raw/v{n}/data.parquet'` as one
+  fused execution against MinIO — no dataset-size limit within reason, since it streams and spills
+  rather than materializing in RAM. `tasks.py` calls the fused `engine["run"]` when the selected
+  engine exposes one. SQL failures are mapped back to the failing step index as
+  `TransformStepError`, same as pandas.
+- **Join / combine-datasets transform step:** new `join` op (category **Combine**) —
+  `{"type": "join", "dataset_id", "left_on", "right_on", "how": inner|left|right|full}`. Right
+  side always resolves to the referenced dataset's latest version. Ownership enforced via
+  `service.resolve_join_sources` everywhere a plan is accepted (`/transforms/preview`, now
+  auth-gated, and commit/run) — unowned or missing dataset → 404 `Dataset not found`, never 403.
+  Implemented in both engines: pandas via `pd.merge` (right side loaded through DuckDB, capped at
+  100k rows for preview only), DuckDB via a native `JOIN`; both alias colliding right-side columns
+  with a `_right` suffix.
+- See `frontend/README.md` for the matching Pipeline Studio join-builder UI and page rename.
+
+### 2026-07-16 — Alembic migrations added; `create_all()` removed
+
+- Replaced `Base.metadata.create_all()` in `main.py` with Alembic-managed migrations, after it
+  masked a missing `ingestion_jobs.staging_metadata` column (added to the model, never applied to
+  the live DB) and caused a 500 on job creation.
+- Initialized `alembic/` with `env.py` wired to `core.database.Base` and `core.config.settings`.
+- Stamped a `baseline` migration (`6455dd9affdd`) against the existing DB — no DDL applied, since
+  the schema was already up to date.
+- See **Database Migrations** section above for the new workflow.
 
 ### 2026-07-13 — Refactor: extract MinIO client to infrastructure/
 

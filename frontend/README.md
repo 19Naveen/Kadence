@@ -130,8 +130,8 @@ Public routes are open to all. `/signin` and `/signup` are wrapped in `<PublicOn
 | `/auth` | Redirect → `/signin` | — | Legacy redirect |
 | `/onboarding` | `OnboardingPage` | Yes | Create first workspace (no AppShell) |
 | `/app` | `HomePage` | Yes | Platform dashboard / overview |
-| `/app/data-import` | `DataImportPage` | Yes | Ingest files or connect databases |
-| `/app/data-transform` | `DataTransformPage` | Yes | Apply transformation steps to datasets |
+| `/app/data-import` | `DataImportPage` | Yes | Ingest files or connect databases. Dataset detail panel always shows a Data Origin & Lineage section — where the dataset originally came from (file/DB table), plus any join sources if it was combined in Pipeline Studio |
+| `/app/data-transform` | `DataTransformPage` (**Pipeline Studio**) | Yes | Apply transformation steps to datasets, including cross-dataset joins. The Preview tab (no import in progress) can also combine already-imported datasets and save the result as a new/existing dataset via "Save as dataset" |
 | `/app/query-studio` | `QueryStudioPage` | Yes | SQL queries on Parquet via DuckDB |
 | `/app/eda-dashboards` | `EDADashboardsPage` | Yes | Exploratory data analysis dashboards |
 | `/app/automl-lab` | `AutoMLLabPage` | Yes | AutoML pipeline configuration |
@@ -328,6 +328,85 @@ npm run preview
 ---
 
 ## Changelog
+
+### 2026-07-19 — Data Lineage view in Data Import + fix: join right-key defaulted to empty
+
+- Dataset detail panel (`DataImportPage.tsx`) now **always** shows a **Data Origin & Lineage**
+  section above Version History — for every dataset, not just combined ones. It always states
+  where the data originally came from (`originLabel`: "Uploaded CSV/XLSX/Parquet file", or
+  `<db type> · <table>` for a DB import — table name only, never credentials), and additionally
+  lists any join sources if the dataset's latest version was produced by combining others:
+  each join edge shows the source dataset's name, join type/keys, and *its own* origin,
+  indented recursively for multi-hop chains (a dataset joined from a dataset that was itself
+  joined, etc.). Built by `fetchLineageTree`, which calls `GET /datasets/{id}/lineage`
+  recursively (server only resolves one hop; depth capped at 4 with cycle guard via a
+  `visited` set).
+- Fixed a join-builder bug in `DataTransformPage.tsx`: the right-side key select (`right_on`,
+  kind `column_right`) never got a default value once the right dataset's columns finished
+  loading — unlike `left_on`, which `defaultParams` already handles. The `<select>` visually
+  showed the first column but `draftParams.right_on` stayed `""`, so committing the step could
+  produce a join with an empty right key, failing at preview/run time with `"right dataset has
+  no column ''"`. Now auto-selected the same way `left_on` already was.
+
+### 2026-07-19 — Fix: join step (and "Combine" category) never appeared in Pipeline Studio
+
+- `fetchOpsFromApi` (merges the backend's op catalog — including `join`, category
+  "Combine" — into the frontend's `OPS`/`CATS`) was defined in `transforms.ts` but never
+  called anywhere. `DataTransformPage` silently ran on `LOCAL_CATS`
+  (`["Columns","Rows","Text","Numeric","Date & Time"]`), which has no "Combine" category and
+  no `join` op at all — so the join builder was invisible in both the Preview tab and Import
+  Review (DataForge), and nothing prevented or supported adding one, let alone several.
+- Fixed by calling `fetchOpsFromApi(authHeaders)` in a `useEffect` on mount, with a small
+  `opsVersion` state bump to force a re-render once the module-level `OPS`/`CATS` bindings
+  update (they aren't React state). Once loaded, "Join Dataset" appears under the "Combine"
+  menu in both tabs and can be added as many times as needed — nothing in the step list caps
+  join count, matching the backend (`resolve_join_sources` and `sql_compiler.compile_plan`
+  already handled unlimited chained joins).
+
+### 2026-07-19 — Pipeline Studio: ad-hoc "Save as dataset" for combining existing datasets
+
+- The Preview tab's "Save & Apply" button is now "Save as dataset" — enabled whenever a
+  dataset is selected (previously the Preview tab had no save capability at all). Clicking it
+  opens an inline form to combine the selected dataset with others via `join` steps (same
+  builder UI as import mode) and save the result as a new dataset (name field) or a new
+  version of an existing one (dataset picker).
+- New `saveCombine()` posts to `POST /data-ingest/jobs/combine` and polls the returned job to
+  completion, reusing a `pollJob()` helper extracted out of the existing `saveAndApply()` (no
+  behavior change to the import-commit path).
+- See `backend/README.md` for the `/jobs/combine` endpoint.
+
+### 2026-07-16 — Pipeline Studio: join step UI + server-routed preview for joins
+
+- `DataTransformPage.tsx` renamed on-page (title + subtitle) to **Pipeline Studio**; the
+  route (`/app/data-transform`) and file name are unchanged. Subtitle now mentions that
+  Save & Apply processes the full dataset in the background (matches the new DuckDB
+  large-run engine on the backend).
+- Added a "Join Dataset" step to the transform builder (category **Combine**), backed by the
+  backend's new `join` op. Two new `FieldDef` kinds in `src/lib/transforms/transforms.ts`:
+  `dataset` (a `<select>` of workspace datasets from `useDatasets()`, excluding the dataset
+  currently being transformed) and `column_right` (a `<select>` of the chosen right dataset's
+  columns, fetched from `GET /data-ingest/datasets/{id}/versions` and cached per `dataset_id`).
+  Field keys match the backend's `JoinStep`/`OPS_CATALOG["join"]` exactly: `dataset_id`,
+  `left_on`, `right_on`, `how`.
+- `join` has no client-side `apply()` (it needs real backend data), so any plan containing a
+  join step now routes the live preview through `applyWithFallback()` (→
+  `POST /transforms/preview`) instead of the synchronous `computeTable`. Plans without a join
+  keep the instant client-side path unchanged. A small "Refreshing joined preview…" banner
+  shows while the server round-trip is in flight.
+- Fixed a pre-existing bug: `TransformOp` never had a `.lbl()` method (only `lbl_template` +
+  `formatLabel`), but the page called `OPS[step.op]?.lbl(...)` in two places. Both now use the
+  already-exported `stepLabel()` helper from `transforms.ts`.
+- Verified DB-source imports get identical Pipeline Studio treatment to file imports — both
+  `uploadFile` and `submitDbJob` in `DataImportPage.tsx` navigate to `/app/data-transform` with
+  the same `{ jobId, datasetId, datasetName }` state shape, and the staged-preview fetch is
+  keyed only on `jobId`. No divergence found.
+
+### 2026-07-16 — Per-version schema in Data Import detail panel
+
+- The dataset detail panel now shows schema for **every** version, not just the latest. Version
+  History rows are clickable accordions that expand to reveal that version's column/type schema
+  (`src/features/data-import/DataImportPage.tsx`). Multiple rows can be open at once to compare.
+  Data was already fetched per-version — this only surfaces it.
 
 ### 2026-06-18 — Review-gated Data Import wizard (hand-off to DataForge)
 
