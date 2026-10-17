@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AuthCardLayout } from "../../components/shared/AuthCardLayout";
+import { AuthCardLayout, PasswordField } from "../../components/shared/AuthCardLayout";
 import { useAuthContext } from "../../lib/context/AuthContext";
+
+const MIN_PASSWORD = 8;
 
 export function SignupPage() {
   const { signupWithCredentials } = useAuthContext();
@@ -10,94 +12,104 @@ export function SignupPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const mismatch = confirm.length > 0 && confirm !== password;
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setIsLoading(true);
+    if (password.length < MIN_PASSWORD) {
+      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setIsSubmitting(true);
     try {
-      await signupWithCredentials({ username, email, password });
+      await signupWithCredentials({ username: username.trim(), email: email.trim(), password });
       navigate("/onboarding", { replace: true });
-    } catch (err: any) {
-      setError(err.message ?? "Sign up failed. Please try again.");
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign up failed. Please try again.");
+      setIsSubmitting(false);
     }
   }
 
   return (
     <AuthCardLayout
       title="Create your account"
-      subtitle="Start building your intelligent data workspace"
+      subtitle="Start with a workspace for your data"
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link to="/signin" className="font-semibold text-primary hover:underline">Sign in</Link>
+        </>
+      }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
-            Username
-          </label>
+          <label htmlFor="signup-username" className="field-label">Username</label>
           <input
+            id="signup-username"
             type="text"
-            className="input w-full"
-            placeholder="yourname"
+            className="input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
             required
             autoFocus
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
-            Email
-          </label>
+          <label htmlFor="signup-email" className="field-label">Email</label>
           <input
+            id="signup-email"
             type="email"
-            className="input w-full"
-            placeholder="you@company.com"
+            className="input"
+            placeholder="name@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             required
           />
         </div>
 
+        <PasswordField
+          id="signup-password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD}
+          hint={`At least ${MIN_PASSWORD} characters.`}
+        />
+
         <div>
-          <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
-            Password
-          </label>
-          <input
-            type="password"
-            className="input w-full"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
+          <PasswordField
+            id="signup-confirm"
+            label="Confirm password"
+            value={confirm}
+            onChange={setConfirm}
+            autoComplete="new-password"
           />
+          {mismatch && <p role="alert" className="mt-1 text-xs text-danger">Passwords don't match.</p>}
         </div>
 
         {error && (
-          <p className="text-sm text-danger bg-danger-muted border border-danger/20 rounded-lg px-4 py-3">
+          <p role="alert" className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3 text-sm text-danger">
             {error}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="btn btn-primary w-full py-2.5 mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isLoading ? "Creating account…" : "Create Account"}
+        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-2 h-10 w-full">
+          {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-text-secondary">
-        Already have an account?{" "}
-        <Link to="/signin" className="font-semibold text-accent hover:underline">
-          Sign in
-        </Link>
-      </p>
     </AuthCardLayout>
   );
 }

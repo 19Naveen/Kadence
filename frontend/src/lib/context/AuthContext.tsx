@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { clearSession, readSession, writeSession } from "../auth/storage";
+import { readError } from "../http";
 import {
   AuthContextValue,
   AuthSession,
@@ -33,20 +34,24 @@ async function requestAuth(
   endpoint: "login" | "signup",
   payload: LoginInput | SignupInput
 ): Promise<AuthSession> {
-  const response = await fetch(`${API_BASE_URL}/auth/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const responseBody = await response.json();
-  if (!response.ok) {
-    throw new Error(responseBody?.detail ?? "Authentication request failed.");
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/auth/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error("Can't reach the server. Check your connection and try again.");
   }
 
-  const data = responseBody as AuthApiResponse;
+  if (!response.ok) {
+    throw new Error(
+      await readError(response, endpoint === "login" ? "Sign in failed. Please try again." : "Sign up failed. Please try again.")
+    );
+  }
+
+  const data = (await response.json()) as AuthApiResponse;
 
   return {
     accessToken: data.access_token,

@@ -1,28 +1,34 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { AuthCardLayout } from "../../components/shared/AuthCardLayout";
+import { FormEvent, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { AuthCardLayout, PasswordField } from "../../components/shared/AuthCardLayout";
 import { useAuthContext } from "../../lib/context/AuthContext";
+
+/** ProtectedRoute passes the page the user was heading to as `state.from` (a Location). */
+function redirectTarget(state: unknown): string {
+  const from = (state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+  return from?.pathname ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}` : "/app";
+}
 
 export function SigninPage() {
   const { loginWithCredentials } = useAuthContext();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-      await loginWithCredentials({ email, password });
-      navigate("/app", { replace: true });
-    } catch (err: any) {
-      setError(err.message ?? "Sign in failed. Please try again.");
-    } finally {
-      setIsLoading(false);
+      await loginWithCredentials({ email: email.trim(), password });
+      navigate(redirectTarget(location.state), { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed. Please try again.");
+      setIsSubmitting(false);
     }
   }
 
@@ -30,58 +36,41 @@ export function SigninPage() {
     <AuthCardLayout
       title="Welcome back"
       subtitle="Sign in to your Kadence workspace"
+      footer={
+        <>
+          Don't have an account?{" "}
+          <Link to="/signup" className="font-semibold text-primary hover:underline">Create account</Link>
+        </>
+      }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
-            Email
-          </label>
+          <label htmlFor="signin-email" className="field-label">Email</label>
           <input
+            id="signin-email"
             type="email"
-            className="input w-full"
-            placeholder="you@company.com"
+            className="input"
+            placeholder="name@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             required
             autoFocus
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-text-secondary mb-1.5 uppercase tracking-wider">
-            Password
-          </label>
-          <input
-            type="password"
-            className="input w-full"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
+        <PasswordField id="signin-password" label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
 
         {error && (
-          <p className="text-sm text-danger bg-danger-muted border border-danger/20 rounded-lg px-4 py-3">
+          <p role="alert" className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3 text-sm text-danger">
             {error}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="btn btn-primary w-full py-2.5 mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isLoading ? "Signing in…" : "Sign In"}
+        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-2 h-10 w-full">
+          {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-text-secondary">
-        Don't have an account?{" "}
-        <Link to="/signup" className="font-semibold text-accent hover:underline">
-          Get started free
-        </Link>
-      </p>
     </AuthCardLayout>
   );
 }
