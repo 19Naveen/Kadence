@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthContext } from "../context/AuthContext";
 import { useWorkspaceContext } from "../context/WorkspaceContext";
 import { readError } from "../http";
@@ -34,12 +34,17 @@ export interface AggregatePoint {
 }
 
 /** Fetch the real datasets in the active workspace. Source of truth for every
- *  downstream feature (EDA, Query, Transform, ML). */
-export function useDatasets() {
+ *  downstream feature (EDA, Query, Transform, ML).
+ *
+ *  A dataset exists as soon as a file is staged, before its import is reviewed and
+ *  saved; until then it has no versions and no data to read. Those are hidden unless
+ *  `includePending` is set (Data sources shows them so they can be discarded). */
+export function useDatasets({ includePending = false }: { includePending?: boolean } = {}) {
   const { session } = useAuthContext();
   const { activeWorkspace } = useWorkspaceContext();
-  const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
+  const [all, setAll] = useState<DatasetSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
 
   const authHeaders = useCallback(
     (): Record<string, string> => ({ Authorization: `Bearer ${session?.accessToken}` }),
@@ -47,8 +52,9 @@ export function useDatasets() {
   );
 
   const refetch = useCallback(async () => {
+    const id = ++requestId.current;
     if (!activeWorkspace) {
-      setDatasets([]);
+      setAll([]);
       setLoading(false);
       return;
     }
@@ -58,15 +64,19 @@ export function useDatasets() {
         `${API_BASE}/data-ingest/datasets?workspace_id=${activeWorkspace.id}`,
         { headers: authHeaders() },
       );
-      if (res.ok) setDatasets(await res.json());
+      // Ignore responses for a workspace the user has already switched away from.
+      if (res.ok && id === requestId.current) setAll(await res.json());
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [activeWorkspace, authHeaders]);
 
   useEffect(() => {
+    setAll([]);
     refetch();
   }, [refetch]);
+
+  const datasets = useMemo(() => (includePending ? all : all.filter((d) => d.version_count > 0)), [all, includePending]);
 
   return { datasets, loading, refetch, authHeaders };
 }

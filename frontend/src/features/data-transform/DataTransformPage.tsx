@@ -6,7 +6,7 @@ import { cn } from "../../lib/cn";
 import { useWorkspaceContext } from "../../lib/context/WorkspaceContext";
 import { API_BASE, useDatasets, useQueryApi } from "../../lib/hooks/useDatasets";
 import { readError } from "../../lib/http";
-import { combine, commitJob, waitForJob } from "../../lib/api/ingest";
+import { combine, commitJob, deleteDataset, waitForJob } from "../../lib/api/ingest";
 import { formatCount, plural } from "../../lib/format";
 import {
   SERVER_ONLY_OPS, defaultParams, fetchOpsFromApi, toApiStep, type Table, type TransformParams,
@@ -231,6 +231,22 @@ export function DataTransformPage() {
     runSave(() => commitJob(authHeaders, launch.jobId, apiSteps()), `Imported ${launch.datasetName}.`);
   }
 
+  /** Leave an import without saving. A brand-new dataset (no versions yet) is removed so it
+   *  doesn't linger in the library; a new version of an existing dataset just isn't saved. */
+  async function discardImport() {
+    if (launch?.mode !== "import" || !activeWorkspace) return;
+    const isNewDataset = !datasets.some((d) => d.id === launch.datasetId); // `datasets` lists only imported ones
+    setSaving("Discarding…");
+    try {
+      if (isNewDataset) await deleteDataset(authHeaders, activeWorkspace.id, launch.datasetId);
+      saved.current = true;
+      navigate("/app/data-import", { state: { notice: `Discarded the import of ${launch.datasetName}.` } });
+    } catch (e) {
+      setSaveError((e as Error).message);
+      setSaving(null);
+    }
+  }
+
   // Warn before closing the tab with unsaved steps.
   useEffect(() => {
     if (!steps.length) return;
@@ -337,6 +353,9 @@ export function DataTransformPage() {
           <button className="btn btn-secondary btn-sm ml-1 hidden sm:inline-flex" onClick={() => setPaletteOpen(true)} disabled={!src || !!saving}>
             <Plus size={14} /> Add step
           </button>
+          {importMode && (
+            <button className="btn btn-ghost ml-1" onClick={discardImport} disabled={!!saving || datasetsLoading}>Discard import</button>
+          )}
           {importMode ? (
             <button className="btn btn-primary ml-1" onClick={saveImport} disabled={!src || !!saving || !!editor || evaluating}>
               {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />} Import dataset

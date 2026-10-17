@@ -41,7 +41,7 @@ export function DataImportPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { activeWorkspace } = useWorkspaceContext();
-  const { datasets, loading, refetch, authHeaders } = useDatasets();
+  const { datasets, loading, refetch, authHeaders } = useDatasets({ includePending: true });
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SourceFilter>("all");
@@ -252,9 +252,10 @@ export function DataImportPage() {
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
-                            className="size-4 accent-primary"
+                            className="size-4 accent-primary disabled:opacity-30"
                             checked={selected.has(ds.id)}
                             onChange={() => toggle(ds.id)}
+                            disabled={ds.version_count === 0}
                             aria-label={`Select ${ds.name}`}
                           />
                         </td>
@@ -265,7 +266,10 @@ export function DataImportPage() {
                             </span>
                             <span className="min-w-0">
                               <span className="block truncate font-semibold group-hover:text-primary group-hover:underline">{ds.name}</span>
-                              <span className="block text-xs text-text-tertiary">{SOURCE_LABEL[ds.source_type] ?? ds.source_type}</span>
+                              <span className="block text-xs text-text-tertiary">
+                                {SOURCE_LABEL[ds.source_type] ?? ds.source_type}
+                                {ds.version_count === 0 && <span className="badge ml-2 bg-signal-muted text-signal">Not imported</span>}
+                              </span>
                             </span>
                           </button>
                         </td>
@@ -274,6 +278,14 @@ export function DataImportPage() {
                         <td className="tabular hidden px-3 py-3 text-right font-mono text-[13px] text-text-secondary md:table-cell">{formatBytes(ds.latest_file_size)}</td>
                         <td className="hidden px-3 py-3 text-text-secondary lg:table-cell">{formatDate(ds.created_at)}</td>
                         <td className="px-4 py-3">
+                          {ds.version_count === 0 ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="hidden text-xs text-text-tertiary xl:inline">The review wasn't finished</span>
+                              <button className="btn btn-ghost btn-sm text-danger" onClick={() => setConfirmDelete([ds])}>
+                                <Trash2 size={14} /> Discard
+                              </button>
+                            </div>
+                          ) : (
                           <div className="flex items-center justify-end gap-1">
                             <button
                               className="btn btn-ghost btn-sm"
@@ -289,6 +301,7 @@ export function DataImportPage() {
                               <ChevronRight size={16} />
                             </button>
                           </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -417,7 +430,7 @@ function UploadDialog({
   onImported: (message: string) => void;
 }) {
   const single = files.length === 1;
-  const fileDatasets = datasets.filter((d) => isFileSource(d.source_type));
+  const fileDatasets = datasets.filter((d) => isFileSource(d.source_type) && d.version_count > 0);
   const [names, setNames] = useState(files.map((f) => stripExt(f.name)));
   const [destination, setDestination] = useState<"new" | "existing">(target ? "existing" : "new");
   const [existingId, setExistingId] = useState(target?.id ?? fileDatasets[0]?.id ?? "");
@@ -756,7 +769,7 @@ function DatasetDetail({
       footer={
         <>
           <button className="btn btn-ghost mr-auto text-danger" onClick={onDelete}><Trash2 size={15} /> Delete dataset</button>
-          <button className="btn btn-primary" onClick={onShape}><Workflow size={15} /> Open in Pipeline Studio</button>
+          <button className="btn btn-primary" onClick={onShape} disabled={dataset.version_count === 0}><Workflow size={15} /> Open in Pipeline Studio</button>
         </>
       }
     >

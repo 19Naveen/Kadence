@@ -195,7 +195,7 @@ function UserMenu() {
           className="absolute bottom-full left-0 right-0 z-50 mb-1 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-soft-lg animate-scale-in"
         >
           <MenuItem icon={<Settings size={15} />} onClick={() => go("/app/workspace-settings")}>Workspace settings</MenuItem>
-          <MenuItem icon={<Info size={15} />} onClick={() => go("/app/about")}>About Kadence</MenuItem>
+          <MenuItem icon={<Info size={15} />} onClick={() => go("/app/about")}>Your profile</MenuItem>
           <div className="my-1 h-px bg-border" />
           <MenuItem
             icon={<LogOut size={15} />}
