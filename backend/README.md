@@ -543,6 +543,9 @@ celery -A celery_app worker --loglevel=info
 - `docker-compose.yml` now creates `POSTGRES_DB: kadence`. Postgres database names are
   case-sensitive, so `DATABASE_URL` must end in `/kadence` (an existing `Kadence` DB can be renamed
   with `ALTER DATABASE "Kadence" RENAME TO kadence`)
+- The Alembic `baseline` migration (`6455dd9affdd`) was empty, so a fresh database got no tables.
+  It now creates all six tables (and its downgrade drops the enum types). Databases already
+  stamped at `baseline` keep their tables and are unaffected
 
 ### 2026-08-06 — PostgreSQL host port changed
 
