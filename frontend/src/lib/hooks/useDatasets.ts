@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuthContext } from "../context/AuthContext";
 import { useWorkspaceContext } from "../context/WorkspaceContext";
+import { readError } from "../http";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -87,7 +88,7 @@ export function useQueryApi() {
         `${API_BASE}/query/datasets/${datasetId}/preview?limit=${limit}`,
         { headers: { Authorization: `Bearer ${session?.accessToken}` } },
       );
-      if (!res.ok) throw new Error((await res.json()).detail ?? "Failed to load preview");
+      if (!res.ok) throw new Error(await readError(res, "Failed to load preview"));
       return res.json();
     },
     [session],
@@ -100,7 +101,7 @@ export function useQueryApi() {
         headers: headers(),
         body: JSON.stringify({ dataset_id: datasetId, sql, row_limit: rowLimit }),
       });
-      if (!res.ok) throw new Error((await res.json()).detail ?? "Query failed");
+      if (!res.ok) throw new Error(await readError(res, "Query failed"));
       return res.json();
     },
     [headers],
@@ -125,7 +126,7 @@ export function useQueryApi() {
           limit,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).detail ?? "Aggregation failed");
+      if (!res.ok) throw new Error(await readError(res, "Aggregation failed"));
       return (await res.json()).data;
     },
     [headers],
