@@ -47,7 +47,7 @@ from modules.ingestion.service import (
     resolve_join_sources,
     resolve_schema_mapping,
 )
-from infrastructure.blob.minio_client import delete_object, upload_staging_stream
+from infrastructure.blob.minio_client import delete_object, delete_prefix, upload_staging_stream
 from modules.ingestion.tasks import run_ingestion_pipeline
 from modules.ingestion.transforms import (
     OPS_CATALOG,
@@ -416,8 +416,6 @@ async def delete_dataset(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    from infrastructure.blob.minio_client import delete_object
-
     assert_workspace_owned(db, workspace_id, owner_id=user["sub"])
     assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
 
@@ -426,11 +424,11 @@ async def delete_dataset(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
         )
-    for path in storage_paths:
-        try:
-            delete_object(path)
-        except Exception:
-            pass
+    # Prefix delete also removes staged uploads, which version storage_paths don't cover.
+    try:
+        delete_prefix(f"{workspace_id}/{dataset_id}/")
+    except Exception:
+        pass
 
 
 @router.get(

@@ -2,6 +2,7 @@ import io
 
 import pandas as pd
 from minio import Minio
+from minio.deleteobjects import DeleteObject
 
 from core.config import settings
 
@@ -75,6 +76,19 @@ def download_staging_file(object_name: str, local_path: str) -> None:
 
 def delete_object(object_name: str) -> None:
     client.remove_object(BUCKET_NAME, object_name)
+
+
+def delete_prefix(prefix: str) -> None:
+    """Delete every object under `prefix` (e.g. `{workspace_id}/{dataset_id}/`:
+    raw versions and staged uploads alike)."""
+    objects = (
+        DeleteObject(o.object_name)
+        for o in client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
+    )
+    # remove_objects is lazy: errors are only reported (and deletes only sent) on iteration.
+    errors = list(client.remove_objects(BUCKET_NAME, objects))
+    if errors:
+        raise RuntimeError(f"Failed to delete {len(errors)} object(s) under {prefix}: {errors[0]}")
 
 
 def object_size(object_name: str) -> int:

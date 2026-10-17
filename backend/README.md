@@ -342,12 +342,16 @@ features always read the latest version, so the new schema takes effect everywhe
 
 ```
 bucket: datasets
-├── staging/{job_id}/{filename}          ← deleted after SUCCESS
-└── {workspace_id}/{dataset_id}/raw/
-    ├── v1/data.parquet
-    ├── v2/data.parquet
-    └── vN/data.parquet                  ← immutable, never overwritten
+└── {workspace_id}/{dataset_id}/
+    ├── staging/{job_id}/source.{ext}    ← server-named upload; deleted after SUCCESS
+    └── raw/
+        ├── v1/data.parquet
+        ├── v2/data.parquet
+        └── vN/data.parquet              ← immutable, never overwritten
 ```
+
+Everything for a dataset lives under `{workspace_id}/{dataset_id}/`, so deleting a dataset (or a
+workspace, `{workspace_id}/`) removes its objects with `minio_client.delete_prefix`.
 
 ---
 
@@ -544,7 +548,11 @@ celery -A celery_app worker --loglevel=info
   `PostgresConnector` passed `_`-prefixed pipeline state from `source_config` to the driver. It now
   passes only connection options. `NUMERIC` columns now load as numbers (`coerce_float=True`, as
   `pd.read_sql` does) instead of strings
-- Tests: `test_postgres_connector.py` (internal keys)
+- `DELETE /datasets/{id}` removed only version Parquet files, leaking staged uploads in MinIO; it now
+  deletes the whole `{workspace_id}/{dataset_id}/` prefix (`minio_client.delete_prefix`)
+- `DELETE /workspaces/{id}` deleted only the workspace row, orphaning its datasets, versions, jobs
+  and MinIO objects (`datasets.workspace_id` has no FK). It now cascades all of them
+- Tests: `test_workspace_delete.py` (new), `test_postgres_connector.py` (internal keys)
 
 ### 2026-10-18 — Fix: file upload crashed with `'NoneType' object has no attribute 'replace'`
 
