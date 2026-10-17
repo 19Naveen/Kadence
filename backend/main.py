@@ -1,11 +1,6 @@
 from api.router import api_router
-from core.database import Base, engine
-import modules.workspace.models  # noqa: F401 — ensures table is registered before create_all
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Initialize database tables on startup
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 app.add_middleware(

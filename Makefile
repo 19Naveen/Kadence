@@ -9,6 +9,8 @@ help:
 	@echo "  make frontend      - Start frontend dev server only"
 
 run: docker-up
+	@echo "Applying database migrations..."
+	cd backend && uv run alembic upgrade head
 	@echo "Starting backend, celery worker, and frontend... (Ctrl+C to stop all)"
 	@trap 'kill 0; docker compose down' INT TERM; \
 	(cd backend && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload 2>&1 | sed "s/^/[backend]  /") & \
@@ -28,6 +30,8 @@ docker-down:
 	@echo "Docker services stopped"
 
 backend: docker-up
+	@echo "Applying database migrations..."
+	cd backend && uv run alembic upgrade head
 	@echo "Starting backend server and celery worker... (Ctrl+C to stop all)"
 	@trap 'kill 0; docker compose down' INT TERM; \
 	(cd backend && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload 2>&1 | sed "s/^/[backend] /") & \
