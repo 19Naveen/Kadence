@@ -1,57 +1,65 @@
 :root {
-  /* Ultra-Premium SDaaS Palette */
-  --bg: 0 0% 100%;
+  /* Kadence palette — cool neutral canvas, ink text, one lagoon teal for actions,
+     and marigold reserved for one job: showing how data changed. */
+  --bg: 220 14% 96%;            /* canvas  #F4F5F7 */
   --surface: 0 0% 100%;
-  --surface-2: 240 5% 96%;
-  --surface-3: 240 5% 92%;
+  --surface-2: 216 15% 94%;     /* #EEF0F3 */
+  --surface-3: 218 17% 91%;     /* #E4E7EC */
 
-  --border: 240 5% 90%;
-  --border-subtle: 240 5% 94%;
+  --border: 223 13% 90%;        /* #E2E4E9 */
+  --border-subtle: 216 13% 94%; /* #ECEEF1 */
 
-  --text: 240 10% 4%;
-  --text-secondary: 240 5% 35%;
-  --text-tertiary: 240 5% 60%;
+  --text: 223 14% 10%;          /* ink #15171C */
+  --text-secondary: 221 8% 37%; /* #565B66 */
+  --text-tertiary: 220 7% 57%;  /* #8A8F99 */
 
-  /* Primary: Deep Indigo/Black mix */
-  --primary: 240 10% 4%;
-  --primary-light: 240 10% 15%;
-  --primary-muted: 240 10% 96%;
+  /* Primary: lagoon teal #0B6E69 (primary-light is its pressed/hover shade) */
+  --primary: 177 82% 24%;
+  --primary-light: 177 82% 19%;
+  --primary-muted: 170 33% 92%;
 
-  /* Accent: Electric Blue */
-  --accent: 221 83% 53%;
-  --accent-light: 221 83% 96%;
+  /* Accent follows primary so links and focus rings stay one colour */
+  --accent: 177 82% 24%;
+  --accent-light: 170 33% 92%;
+
+  /* Signal: marigold #C7791A — row/column deltas and "look here" moments only */
+  --signal: 33 77% 44%;
+  --signal-muted: 36 82% 93%;
 
   /* Semantic */
-  --success: 142 76% 36%;
-  --success-muted: 142 76% 96%;
-  --warning: 38 92% 50%;
-  --warning-muted: 38 92% 96%;
-  --danger: 0 84% 60%;
-  --danger-muted: 0 84% 96%;
-  --info: 199 89% 48%;
-  --info-muted: 199 89% 96%;
+  --success: 139 47% 33%;
+  --success-muted: 135 33% 93%;
+  --warning: 36 71% 42%;
+  --warning-muted: 40 80% 93%;
+  --danger: 6 62% 45%;
+  --danger-muted: 8 70% 95%;
+  --info: 208 56% 42%;
+  --info-muted: 208 55% 94%;
 
-  --sidebar-w: 260px;
-  --header-h: 64px;
+  --sidebar-w: 240px;
+  --header-h: 56px;
 }
 
 [data-theme='dark'] {
-  --bg: 240 10% 4%;
-  --surface: 240 10% 6%;
-  --surface-2: 240 10% 9%;
-  --surface-3: 240 10% 12%;
+  --bg: 216 14% 7%;
+  --surface: 216 15% 10%;
+  --surface-2: 216 14% 13%;
+  --surface-3: 216 13% 17%;
 
-  --border: 240 10% 12%;
-  --border-subtle: 240 10% 10%;
+  --border: 216 12% 18%;
+  --border-subtle: 216 13% 14%;
 
-  --text: 0 0% 100%;
-  --text-secondary: 240 5% 70%;
-  --text-tertiary: 240 5% 45%;
+  --text: 220 17% 93%;
+  --text-secondary: 219 9% 67%;
+  --text-tertiary: 219 7% 46%;
 
-  --primary: 0 0% 100%;
-  --primary-light: 0 0% 90%;
-  --primary-muted: 240 10% 12%;
+  --primary: 174 51% 47%;
+  --primary-light: 174 51% 56%;
+  --primary-muted: 177 40% 14%;
 
-  --accent: 221 83% 60%;
-  --accent-light: 221 83% 15%;
+  --accent: 174 51% 47%;
+  --accent-light: 177 40% 14%;
+
+  --signal: 35 71% 58%;
+  --signal-muted: 33 45% 15%;
 }

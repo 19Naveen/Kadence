@@ -16,6 +16,8 @@
   --color-primary-muted: hsl(var(--primary-muted));
   --color-accent: hsl(var(--accent));
   --color-accent-light: hsl(var(--accent-light));
+  --color-signal: hsl(var(--signal));
+  --color-signal-muted: hsl(var(--signal-muted));
   --color-success: hsl(var(--success));
   --color-success-muted: hsl(var(--success-muted));
   --color-warning: hsl(var(--warning));
@@ -25,95 +27,67 @@
   --color-info: hsl(var(--info));
   --color-info-muted: hsl(var(--info-muted));
 
-  --font-sans: Inter, system-ui, -apple-system, sans-serif;
-  --font-heading: Inter, system-ui, -apple-system, sans-serif;
-  --font-mono: JetBrains Mono, Menlo, Monaco, monospace;
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-heading: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, monospace;
 
-  --text-2xs: 0.625rem;
+  --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
-  --text-2xs--letter-spacing: 0.02em;
+  --text-2xs--letter-spacing: 0.01em;
 
-  --shadow-soft-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.08);
-  --shadow-soft-md: 0 8px 24px -8px rgba(0, 0, 0, 0.06);
-  --shadow-soft-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
-  --shadow-inner-soft: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  --shadow-soft-lg: 0 16px 48px -16px rgba(16, 24, 40, 0.18);
+  --shadow-soft-md: 0 8px 24px -10px rgba(16, 24, 40, 0.12);
+  --shadow-soft-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-inner-soft: inset 0 1px 2px rgba(16, 24, 40, 0.04);
 
   --radius-4xl: 2rem;
 
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --animate-fade-in: fadeIn 0.2s ease-out;
-  --animate-slide-up: slideUp 0.2s ease-out;
-  --animate-scale-in: scaleIn 0.15s ease-out;
+  --animate-fade-in: fadeIn 0.18s ease-out;
+  --animate-slide-up: slideUp 0.18s ease-out;
+  --animate-scale-in: scaleIn 0.14s ease-out;
 
   @keyframes fadeIn {
-    0% {
-      opacity: 0;
-    }
-    100% {
-      opacity: 1;
-    }
+    0% { opacity: 0; }
+    100% { opacity: 1; }
   }
   @keyframes slideUp {
-    0% {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    0% { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
   }
   @keyframes scaleIn {
-    0% {
-      opacity: 0;
-      transform: scale(0.98);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
+    0% { opacity: 0; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1); }
   }
 }
 
-/*
-  The default border color has changed to `currentcolor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-  }
-}
+/* ── Components ─────────────────────────────────────────────────────────────── */
 
 @utility card {
-  @apply bg-surface rounded-lg border border-border-subtle p-5;
-  transition: all 0.15s ease;
+  @apply bg-surface rounded-xl border border-border p-5;
 }
 
 @utility card-hover {
-  @apply hover:border-border hover:shadow-xs;
+  @apply transition-colors hover:border-text-tertiary/40;
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all duration-150;
-  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  @apply inline-flex items-center justify-center gap-2 h-9 px-3.5 text-sm font-semibold rounded-lg whitespace-nowrap select-none;
+  @apply transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
+  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+}
+
+@utility btn-sm {
+  @apply h-8 px-2.5 text-[13px] gap-1.5;
 }
 
 @utility btn-primary {
-  @apply bg-primary text-white hover:bg-primary-light active:scale-[0.98];
+  @apply bg-primary text-white hover:bg-primary-light;
 }
 
 @utility btn-secondary {
-  @apply bg-surface text-text hover:bg-surface-2 border border-border;
+  @apply bg-surface text-text border border-border hover:bg-surface-2;
 }
 
 @utility btn-ghost {
@@ -121,30 +95,60 @@
 }
 
 @utility btn-danger {
-  @apply bg-danger text-white hover:opacity-90 active:scale-[0.98];
+  @apply bg-danger text-white hover:opacity-90;
+}
+
+@utility btn-icon {
+  @apply inline-flex items-center justify-center size-8 rounded-lg text-text-secondary transition-colors;
+  @apply hover:bg-surface-2 hover:text-text disabled:opacity-40 disabled:pointer-events-none;
+  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
 }
 
 @utility input {
-  @apply w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg transition-all duration-150;
+  @apply w-full h-9 px-3 text-sm bg-surface text-text border border-border rounded-lg transition-colors duration-150;
   @apply placeholder:text-text-tertiary;
-  @apply focus:border-primary focus:ring-1 focus:ring-primary/20;
+  @apply focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15;
+  @apply disabled:opacity-60 disabled:cursor-not-allowed;
+}
+
+@utility field-label {
+  @apply block text-[13px] font-semibold text-text mb-1.5;
+}
+
+@utility field-hint {
+  @apply mt-1 text-xs text-text-tertiary;
 }
 
 @utility table-row {
-  @apply border-b border-border-subtle transition-colors hover:bg-surface-2/50;
+  @apply border-b border-border-subtle transition-colors hover:bg-surface-2/60;
 }
 
 @utility badge {
-  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+  @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-4;
 }
 
 @utility section-label {
-  @apply text-[11px] font-medium uppercase tracking-wider text-text-tertiary;
+  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary;
 }
 
+@utility kbd {
+  @apply inline-flex items-center rounded border border-border bg-surface-2 px-1 font-mono text-[10px] text-text-tertiary;
+}
+
+/* Entrance used by older pages (`animate-in …`): a short fade, nothing else. */
+@utility animate-in {
+  animation: fadeIn 0.18s ease-out;
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────────── */
+
 @layer base {
-  * {
-    @apply border-border;
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
   }
 
   html {
@@ -153,13 +157,11 @@
 
   body {
     @apply bg-bg text-text font-sans antialiased;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "ss01", "ss02", "cv01";
+    font-feature-settings: "ss01";
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-accent;
+    @apply outline-2 outline-offset-2 outline-primary;
   }
 
   input,
@@ -177,6 +179,12 @@
     @apply font-sans font-semibold tracking-tight;
   }
 
+  /* The display face is used with restraint: page titles only. */
+  h1 {
+    @apply font-heading;
+    letter-spacing: -0.02em;
+  }
+
   code,
   pre,
   .mono {
@@ -188,11 +196,11 @@
   }
 
   ::selection {
-    @apply bg-primary/10 text-text;
+    @apply bg-primary/15 text-text;
   }
 
   ::-webkit-scrollbar {
-    @apply w-1.5 h-1.5;
+    @apply w-2 h-2;
   }
 
   ::-webkit-scrollbar-track {
@@ -205,5 +213,16 @@
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-text-tertiary;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
