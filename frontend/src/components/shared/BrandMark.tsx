@@ -26,7 +26,7 @@ export function BrandMark({ size = "md", inverted = false }: BrandMarkProps) {
           inverted ? "text-white" : "text"
         }`}
       >
-        KnowRep
+        Kadence
       </span>
     </div>
   );

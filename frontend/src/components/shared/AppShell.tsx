@@ -125,7 +125,7 @@ export function AppShell() {
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/20">
               <span className="text-sm font-bold">K</span>
             </div>
-            <span className="text-base font-bold tracking-tight text">KnowRep</span>
+            <span className="text-base font-bold tracking-tight text">Kadence</span>
           </div>
         </div>
 

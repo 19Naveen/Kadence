@@ -92,7 +92,7 @@ Store in `backend/.env` (never commit this file).
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/knowrep` | PostgreSQL connection |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/Kadence` | PostgreSQL connection |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO API endpoint |
 | `MINIO_ACCESS_KEY` | `admin` | MinIO access key |
 | `MINIO_SECRET_KEY` | `password123` | MinIO secret key |

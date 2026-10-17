@@ -61,7 +61,7 @@ export const steps: Step[] = [
     number: "01",
     title: "Connect Your Source",
     description:
-      "Upload a file or connect a database in seconds. KnowRep infers schema automatically.",
+      "Upload a file or connect a database in seconds. Kadence infers schema automatically.",
   },
   {
     number: "02",

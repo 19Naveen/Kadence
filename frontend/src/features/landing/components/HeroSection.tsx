@@ -40,7 +40,7 @@ export function HeroSection() {
 
         {/* Subheadline */}
         <p className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto leading-relaxed animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
-          KnowRep unifies data ingestion, schema management, visual analytics, and ML training
+          Kadence unifies data ingestion, schema management, visual analytics, and ML training
           into one collaborative platform — from raw files to production predictions.
         </p>
 

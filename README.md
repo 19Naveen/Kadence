@@ -100,8 +100,8 @@ All services run via Docker Compose (`backend/docker-compose.yml`).
 make run
 ```
 
-Starts Docker services, applies pending database migrations (`alembic upgrade head`), then FastAPI
-backend and React frontend. Ctrl+C stops all.
+Starts Docker services, applies pending database migrations (`alembic upgrade head`)
+then FastAPI backend and React frontend. Ctrl+C stops all.
 
 ### Individual commands
 

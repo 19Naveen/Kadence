@@ -33,7 +33,7 @@ export function LandingFooter() {
 
         <div className="mt-10 pt-6 border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-text-tertiary">
-            © {new Date().getFullYear()} KnowRep. All rights reserved.
+            © {new Date().getFullYear()} Kadence. All rights reserved.
           </p>
           <p className="text-xs text-text-tertiary">
             Built with FastAPI · PostgreSQL · MinIO · React

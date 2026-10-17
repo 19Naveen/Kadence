@@ -19,7 +19,7 @@ export function CtaBanner() {
           <h2 className="text-4xl sm:text-5xl font-black tracking-tight mb-4">
             Your data has a story.
             <br />
-            <span className="text-primary">KnowRep tells it.</span>
+            <span className="text-primary">Kadence tells it.</span>
           </h2>
           <p className="text-text-secondary text-lg max-w-xl mx-auto mb-8">
             Join data teams already transforming raw datasets into actionable intelligence.

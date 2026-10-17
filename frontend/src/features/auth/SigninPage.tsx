@@ -29,7 +29,7 @@ export function SigninPage() {
   return (
     <AuthCardLayout
       title="Welcome back"
-      subtitle="Sign in to your KnowRep workspace"
+      subtitle="Sign in to your Kadence workspace"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

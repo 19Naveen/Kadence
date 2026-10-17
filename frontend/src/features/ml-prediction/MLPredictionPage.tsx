@@ -398,7 +398,7 @@ function APITab({ model }: { model: ModelInfo | null }) {
     );
   }
 
-  const endpoint = `https://api.knowrep.com/v1/predict/${model.id}`;
+  const endpoint = `https://api.Kadence.com/v1/predict/${model.id}`;
 
   const curlExample = `curl -X POST "${endpoint}" \\
   -H "Content-Type: application/json" \\

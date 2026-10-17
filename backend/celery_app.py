@@ -2,7 +2,7 @@ from celery import Celery
 from core.config import settings
 
 celery_app = Celery(
-    "knowrep",
+    "Kadence",
     broker=settings.RABBITMQ_URL,
     backend="rpc://",
     include=["modules.ingestion.tasks"],

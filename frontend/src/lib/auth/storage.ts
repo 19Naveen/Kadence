@@ -1,6 +1,6 @@
 import { AuthSession } from "./types";
 
-const COOKIE_NAME = "knowrep.session";
+const COOKIE_NAME = "Kadence.session";
 // 7-day expiry matches a typical "remember me" window
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 

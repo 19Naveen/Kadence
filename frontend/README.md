@@ -1,6 +1,6 @@
 # Frontend — Knowledge Representation Platform
 
-React 18 + TypeScript + Vite frontend for the KnowRep platform.
+React 18 + TypeScript + Vite frontend for the Kadence platform.
 
 > Part of the monorepo. See [root README](../README.md) for platform overview and [backend README](../backend/README.md) for API detail.
 
@@ -54,7 +54,7 @@ frontend/
     │   │   └── PublicOnlyRoute.tsx# Redirects to / if already authenticated
     │   └── shared/
     │       ├── AppShell.tsx       # Main layout: sidebar + header + outlet
-    │       ├── BrandMark.tsx      # "K" tile + "KnowRep" wordmark (size/inverted props)
+    │       ├── BrandMark.tsx      # "K" tile + "Kadence" wordmark (size/inverted props)
     │       ├── AuthCardLayout.tsx # Centered gradient card shell for auth pages
     │       ├── PageHeader.tsx     # Page title + subtitle component
     │       ├── EmptyState.tsx     # Empty state placeholder
@@ -178,7 +178,7 @@ Manages authentication state and all auth API calls.
 | `signupWithCredentials(username, email, password)` | `async fn` | POST `/auth/signup` |
 | `logout()` | `fn` | Clears session from state and localStorage |
 
-Session is persisted in localStorage under key `knowrep.auth.session` and rehydrated on app load.
+Session is persisted in localStorage under key `Kadence.auth.session` and rehydrated on app load.
 
 ### AppContext (`src/lib/context/AppContext.tsx`)
 
