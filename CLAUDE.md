@@ -87,3 +87,8 @@ celery -A celery_app worker --loglevel=info
 - Python 3.14, FastAPI, SQLAlchemy 2.0, Pydantic v2, Celery 5
 - All backend env vars in `backend/.env` — see `backend/README.md` for the full list
 - All frontend env vars in `frontend/.env.local` — see `frontend/README.md` for the full list
+
+
+## Things that needs to be followed:
+
+ - Don't commit code with co-authored by claude

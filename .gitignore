@@ -22,3 +22,9 @@ Documentation/
 *.swp
 dist/
 .DS_Store
+.superpowers/
+.claude/
+.superpowers/
+.venv/
+__pycache__/
+.pytest_cache/
