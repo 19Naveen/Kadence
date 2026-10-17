@@ -52,14 +52,15 @@ frontend/
     │   │   ├── ProtectedRoute.tsx # Redirects to /auth if not authenticated
     │   │   └── PublicOnlyRoute.tsx# Redirects to / if already authenticated
     │   └── shared/
-    │       ├── AppShell.tsx       # Main layout: sidebar + header + outlet
-    │       ├── BrandMark.tsx      # "K" tile + "Kadence" wordmark (size/inverted props)
-    │       ├── AuthCardLayout.tsx # Centered gradient card shell for auth pages
-    │       ├── PageHeader.tsx     # Page title + subtitle component
-    │       ├── EmptyState.tsx     # Empty state placeholder
-    │       ├── MetricTile.tsx     # Single metric display tile
-    │       ├── StatCard.tsx       # Stat card with label and value
-    │       └── StatusPill.tsx     # Status badge (active, pending, error)
+    │       ├── AppShell.tsx       # Sidebar (lifecycle nav, workspace switcher, user menu) + outlet,
+    │       │                      # error boundary, Suspense; FULL_BLEED routes get no page padding
+    │       ├── BrandMark.tsx      # "K" tile + "Kadence" wordmark
+    │       ├── AuthCardLayout.tsx # Card shell for auth pages
+    │       ├── PageHeader.tsx     # Eyebrow + title + subtitle + actions (no horizontal padding)
+    │       ├── Dialog.tsx         # Accessible modal / side panel (Esc, backdrop, focus return)
+    │       ├── PreviewNotice.tsx  # Honest banner for pages without a backend (ML pages)
+    │       ├── ErrorBoundary.tsx  # Per-page crash isolation, reset on navigation
+    │       └── PageLoading.tsx    # Suspense fallback for lazy routes
     │
     ├── features/                  # One folder per platform feature
     │   ├── home/
@@ -69,15 +70,20 @@ frontend/
     │   │   ├── landingContent.ts  # Typed feature + step arrays
     │   │   └── components/        # LandingNavbar, HeroSection, FeaturesSection, HowItWorksSection, CtaBanner, LandingFooter
     │   ├── auth/
-    │   │   ├── AuthPage.tsx       # Legacy combined page (kept for reference)
     │   │   ├── SigninPage.tsx     # Email + password sign in → /app
     │   │   └── SignupPage.tsx     # Registration → /onboarding
     │   ├── onboarding/
     │   │   └── OnboardingPage.tsx # Workspace creation; no AppShell
     │   ├── data-import/
-    │   │   └── DataImportPage.tsx
-    │   ├── data-transform/
-    │   │   └── DataTransformPage.tsx
+    │   │   └── DataImportPage.tsx # "Data sources": library, upload/connect dialogs, details, join two
+    │   ├── data-transform/        # Pipeline Studio
+    │   │   ├── DataTransformPage.tsx # Layout, source loading, steps + undo/redo, save
+    │   │   ├── usePipeline.ts     # Evaluates steps, snapshot per step (server preview for join/append)
+    │   │   ├── PipelineRail.tsx   # Step rail with per-step row/column deltas
+    │   │   ├── StepPalette.tsx    # Searchable op picker (/ or Cmd+K)
+    │   │   ├── StepEditor.tsx     # Step form + JoinBuilder + AppendBuilder, live draft preview
+    │   │   ├── DataGrid.tsx       # Preview table, column profiles, quick actions
+    │   │   └── launch.ts          # Router state: import review vs shape (+ preset steps)
     │   ├── query-studio/
     │   │   └── QueryStudioPage.tsx
     │   ├── eda-dashboards/
@@ -88,8 +94,6 @@ frontend/
     │   │   └── MLPredictionPage.tsx
     │   ├── automl-lab/
     │   │   └── AutoMLLabPage.tsx
-    │   ├── deploy-sim/
-    │   │   └── DeploySimPage.tsx
     │   ├── workspace/
     │   │   └── WorkspaceSettingsPage.tsx
     │   └── about/
@@ -103,6 +107,13 @@ frontend/
     │   │   ├── AuthContext.tsx    # Auth state + backend API calls
     │   │   ├── AppContext.tsx     # Datasets and dashboards state
     │   │   └── WorkspaceContext.tsx # Workspace and member state
+    │   ├── api/
+    │   │   └── ingest.ts          # /data-ingest client: upload, DB job, commit, combine, waitForJob, lineage
+    │   ├── transforms/
+    │   │   ├── transforms.ts      # Op catalog (merged with GET /transforms/ops), local apply, previewStep
+    │   │   └── joinKeys.ts        # suggestJoinKeys()
+    │   ├── format.ts              # formatDate (DD/MM/YYYY), formatBytes, formatCount, plural
+    │   ├── http.ts                # readError / errMessage for FastAPI error bodies
     │   ├── hooks/
     │   │   └── useDatasets.ts     # useDatasets() (real datasets) + useQueryApi() (DuckDB endpoints)
     │   ├── mocks/
@@ -128,26 +139,32 @@ Public routes are open to all. `/signin` and `/signup` are wrapped in `<PublicOn
 | `/signup` | `SignupPage` | No (public only) | Username + email + password registration |
 | `/auth` | Redirect → `/signin` | — | Legacy redirect |
 | `/onboarding` | `OnboardingPage` | Yes | Create first workspace (no AppShell) |
-| `/app` | `HomePage` | Yes | Platform dashboard / overview |
-| `/app/data-import` | `DataImportPage` | Yes | Ingest files or connect databases. Dataset detail panel always shows a Data Origin & Lineage section — where the dataset originally came from (file/DB table), plus any join sources if it was combined in Pipeline Studio |
-| `/app/data-transform` | `DataTransformPage` (**Pipeline Studio**) | Yes | Apply transformation steps to datasets, including cross-dataset joins. The Preview tab (no import in progress) can also combine already-imported datasets and save the result as a new/existing dataset via "Save as dataset" |
-| `/app/query-studio` | `QueryStudioPage` | Yes | SQL queries on Parquet via DuckDB |
+| `/app` | `HomePage` | Yes | Real workspace counts, recent datasets, quick actions |
+| `/app/data-import` | `DataImportPage` (**Data sources**) | Yes | One library of all datasets; upload files (two files can be imported and opened joined), connect a database, details panel with versions + lineage, select two datasets → "Join these two" |
+| `/app/data-transform` | `DataTransformPage` (**Pipeline Studio**) | Yes | Router state `{mode:"import", jobId, …}` reviews a staged import ("Import dataset"); `{mode:"shape", datasetId, presetSteps?}` shapes an existing dataset and saves as a new version or a new dataset. Full-bleed route |
+| `/app/query-studio` | `QueryStudioPage` | Yes | Read-only SQL on the latest version via DuckDB. Full-bleed route |
 | `/app/eda-dashboards` | `EDADashboardsPage` | Yes | Exploratory data analysis dashboards |
 | `/app/automl-lab` | `AutoMLLabPage` | Yes | AutoML pipeline configuration |
 | `/app/ml-training` | `MLTrainingPage` | Yes | Manual ML training runs |
 | `/app/ml-prediction` | `MLPredictionPage` | Yes | Run and view model predictions |
 | `/app/workspace-settings` | `WorkspaceSettingsPage` | Yes | Workspace members, roles, settings |
 | `/app/about` | `AboutPage` | Yes | Platform information |
+| `/app/*` (unknown) | Redirect → `/app` | — | Unknown app URLs go home |
 | `*` | Redirect → `/` | — | Catch-all |
+
+All pages are lazy-loaded (`React.lazy`) and wrapped in an error boundary inside the shell.
 
 ### Sidebar navigation groups
 
+Grouped by the data lifecycle:
+
 | Group | Pages |
 |---|---|
-| Overview | Home |
-| Data Engine | Data Import, Data Transform, Query Studio, EDA Dashboards |
-| Intelligence | AutoML Lab, ML Training, ML Prediction |
-| Predictive Models | Deploy Sim |
+| (top) | Home |
+| Bring in | Data sources |
+| Shape | Pipeline Studio |
+| Ask | Query Studio, Dashboards |
+| Model | AutoML Lab, Model training, Predictions — marked **Preview** (no backend; sample data) |
 
 ---
 
@@ -256,35 +273,40 @@ The **ML pages** (Training, Prediction, AutoML, Deploy Sim) still use mock data 
 
 ## Design System
 
-Built on TailwindCSS with a custom design token layer.
+Built on TailwindCSS 4 with a token layer. Light theme by default; `[data-theme='dark']` overrides exist.
 
-### Color tokens (`src/styles/tokens.css`)
+### Color tokens (`src/styles/tokens.css`, exposed as Tailwind colors in `globals.css`)
 
-HSL-based CSS custom properties — dark theme by default:
-
-| Token | Usage |
-|---|---|
-| `--color-primary` | Deep indigo/near-black — backgrounds |
-| `--color-accent` | Electric blue — interactive elements |
-| `--color-success` | Green |
-| `--color-warning` | Amber |
-| `--color-danger` | Red |
+| Token | Value | Usage |
+|---|---|---|
+| `bg` / `surface` / `surface-2/3` | `#F4F5F7` / white / greys | Canvas, cards, wells |
+| `text` / `text-secondary` / `text-tertiary` | `#15171C` … | Ink and supporting text (use `text-text-secondary`) |
+| `primary` (+ `primary-muted`) | lagoon teal `#0B6E69` | Actions, active nav, focus rings (`accent` follows primary) |
+| `signal` (+ `signal-muted`) | marigold `#C7791A` | **Only** for showing data change: pipeline rail, row/column deltas, new-column highlights, previews |
+| `success` / `warning` / `danger` / `info` (+ `-muted`) | | Status |
 
 ### Component utility classes (`@utility` in `src/styles/globals.css`)
 
 | Class | Purpose |
 |---|---|
-| `.card` | Surface container with border and radius |
-| `.btn` | Base button |
-| `.btn-primary` | Accent-coloured primary action button |
-| `.btn-secondary` | Outlined secondary button |
-| `.input` | Styled form input |
-| `.badge` | Small status label |
+| `.card`, `.card-hover` | Surface container (rounded-xl, border) |
+| `.btn` + `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-danger`, `.btn-sm` | Buttons (36px, 32px small) |
+| `.btn-icon` | Square icon button (always give it an `aria-label`) |
+| `.input` | Inputs and selects |
+| `.field-label`, `.field-hint` | Form labels and help text |
+| `.badge`, `.section-label`, `.kbd`, `.tabular` | Small labels, eyebrows, key hints, tabular numbers |
 
 ### Typography
 
-- **Body:** Inter (sans-serif)
-- **Code / monospace:** JetBrains Mono
+- **Page titles (`h1`):** Bricolage Grotesque — display face, used for h1 only
+- **Interface:** Hanken Grotesk
+- **Data / code:** JetBrains Mono
+
+### Conventions
+
+- Dates display as DD/MM/YYYY via `lib/format.ts`.
+- No hard-coded colours (`bg-white`, hex) — use tokens so dark mode keeps working.
+- `prefers-reduced-motion` disables animations globally.
 
 ### Custom animations
 
@@ -327,6 +349,20 @@ npm run preview
 ---
 
 ## Changelog
+
+### 2026-10-18 — Design refresh, Data sources and Pipeline Studio rebuild, two-source joins
+
+- New design system (lagoon teal actions, marigold for data change, Bricolage/Hanken/JetBrains
+  Mono) and app shell (lifecycle nav, real user menu, workspace create errors, error boundary,
+  lazy routes). `/signup` guarded like `/signin`; unknown `/app/*` URLs go home
+- Data sources: one library for all datasets, "Join these two" for two selected datasets, two
+  dropped files can be imported and opened joined, upload/connect dialogs, details panel
+- Pipeline Studio rebuilt: step rail with per-step row/column deltas, searchable step palette,
+  live draft preview, join builder (key suggestion, sample values, type warning, match count)
+  and append builder; supports the new backend ops (sort, keep columns, calculated column,
+  group & summarize, append) and the fixed filter operators
+- Home shows real workspace data; ML pages marked Preview; ~100 non-existent Tailwind class
+  names fixed; unused components and unrouted AuthPage/DeploySim removed
 
 ### 2026-10-18 — Dependency upgrade: React 19, Vite 8, Tailwind 4, TypeScript 7
 
