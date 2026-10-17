@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDatasets, useQueryApi, API_BASE } from "../../lib/hooks/useDatasets";
 import { useAuthContext } from "../../lib/context/AuthContext";
+import { useWorkspaceContext } from "../../lib/context/WorkspaceContext";
 import { errMessage, readError } from "../../lib/http";
 import {
-  OPS, CATS, OP_KEYS, defaultParams,
+  OPS, CATS, OP_KEYS, defaultParams, stepLabel, applyWithFallback, fetchOpsFromApi,
   type Table, type TransformParams,
 } from "../../lib/transforms/transforms";
 
@@ -78,6 +79,7 @@ export function DataTransformPage() {
 function PipelineStudio({ importState }: { importState: ImportState }) {
   const navigate = useNavigate();
   const { session } = useAuthContext();
+  const { activeWorkspace } = useWorkspaceContext();
   const { datasets, loading: datasetsLoading } = useDatasets();
   const { preview: fetchPreview } = useQueryApi();
 
@@ -120,10 +122,25 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
   const [commitError, setCommitError] = useState("");
   const [commitProgress, setCommitProgress] = useState("");
 
+  // Save-as-dataset state (preview tab only — combining existing datasets)
+  const [saveTargetOpen, setSaveTargetOpen] = useState(false);
+  const [saveMode, setSaveMode] = useState<"new" | "existing">("new");
+  const [saveName, setSaveName] = useState("");
+  const [saveExistingId, setSaveExistingId] = useState("");
+
   const authHeaders = useCallback(
     (): Record<string, string> => ({ Authorization: `Bearer ${session?.accessToken}` }),
     [session],
   );
+
+  // ── Load the canonical op catalog from the backend ──────────────────────────
+  // OPS/CATS/OP_KEYS are module-level live bindings (not React state); fetching
+  // merges in server-only ops (e.g. "join", category "Combine") that have no
+  // local implementation. opsVersion forces a re-render once that resolves.
+  const [, setOpsVersion] = useState(0);
+  useEffect(() => {
+    fetchOpsFromApi(authHeaders).then(() => setOpsVersion(v => v + 1));
+  }, [authHeaders]);
 
   // ── Load preview data ───────────────────────────────────────────────────────
 
@@ -174,6 +191,46 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
     return () => { cancelled = true; };
   }, [jobId, tab, authHeaders]);
 
+  // ── Right-dataset schema for join builder (kind "column_right") ────────────
+
+  const [rightSchemaColumns, setRightSchemaColumns] = useState<string[]>([]);
+  const [rightSchemaLoading, setRightSchemaLoading] = useState(false);
+  const joinDatasetId = draftOp === "join" ? String(draftParams.dataset_id ?? "") : "";
+
+  useEffect(() => {
+    if (!joinDatasetId) { setRightSchemaColumns([]); return; }
+    let cancelled = false;
+    setRightSchemaLoading(true);
+    fetch(`${API_BASE}/data-ingest/datasets/${joinDatasetId}/versions`, { headers: authHeaders() })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await readError(res, "Failed to load dataset schema"));
+        return res.json() as Promise<{ dataset_schema: Record<string, string> }[]>;
+      })
+      .then((versions) => {
+        if (cancelled) return;
+        const latest = versions[versions.length - 1];
+        const cols = latest ? Object.keys(latest.dataset_schema) : [];
+        setRightSchemaColumns(cols);
+        // Auto-select a right-side column once loaded (mirrors defaultParams' handling
+        // of "column" fields) — otherwise the <select> visually shows the first option
+        // while draftParams stays "", producing a join with an empty right_on.
+        if (cols.length) {
+          setDraftParams(p => {
+            const next = { ...p };
+            for (const f of OPS[draftOp]?.fields ?? []) {
+              if (f.kind === "column_right" && !cols.includes(String(next[f.key] ?? ""))) {
+                next[f.key] = cols[0];
+              }
+            }
+            return next;
+          });
+        }
+      })
+      .catch(() => { if (!cancelled) setRightSchemaColumns([]); })
+      .finally(() => { if (!cancelled) setRightSchemaLoading(false); });
+    return () => { cancelled = true; };
+  }, [joinDatasetId, authHeaders]);
+
   // ── Derived source table ────────────────────────────────────────────────────
 
   const src: Table | null = tab === "import" ? stagedSrc : previewSrc;
@@ -188,13 +245,49 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
   })) ?? [];
 
   // ── Compute ─────────────────────────────────────────────────────────────────
+  // Join steps have no client-side apply() (they need real backend data), so any
+  // plan containing one routes through applyWithFallback (server /transforms/preview)
+  // instead of the synchronous computeTable. Non-join plans keep the instant path.
 
   const emptyTable: Table = { columns: [], rows: [] };
-  const full = src ? computeTable(src, steps) : { table: emptyTable, errors: {} };
-  const viewTable = (activeStepIndex >= 0 && activeStepIndex < steps.length - 1)
-    ? (src ? computeTable(src, steps, activeStepIndex).table : emptyTable)
-    : full.table;
   const viewingPast = activeStepIndex >= 0 && activeStepIndex < steps.length - 1;
+  const viewSteps = viewingPast ? steps.slice(0, activeStepIndex + 1) : steps;
+  const hasJoin = steps.some(s => s.op === "join");
+  const viewHasJoin = viewSteps.some(s => s.op === "join");
+
+  const syncFull = src ? computeTable(src, steps) : { table: emptyTable, errors: {} };
+
+  const [asyncFull, setAsyncFull] = useState<{ table: Table; errors: Record<number, string> } | null>(null);
+  const [asyncFullLoading, setAsyncFullLoading] = useState(false);
+  useEffect(() => {
+    if (!hasJoin || !src) { setAsyncFull(null); return; }
+    let cancelled = false;
+    setAsyncFullLoading(true);
+    applyWithFallback(src, steps, authHeaders)
+      .then(res => { if (!cancelled) setAsyncFull(res); })
+      .finally(() => { if (!cancelled) setAsyncFullLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, hasJoin, JSON.stringify(steps), authHeaders]);
+
+  const [asyncView, setAsyncView] = useState<{ table: Table; errors: Record<number, string> } | null>(null);
+  const [asyncViewLoading, setAsyncViewLoading] = useState(false);
+  useEffect(() => {
+    if (!viewingPast || !viewHasJoin || !src) { setAsyncView(null); return; }
+    let cancelled = false;
+    setAsyncViewLoading(true);
+    applyWithFallback(src, viewSteps, authHeaders)
+      .then(res => { if (!cancelled) setAsyncView(res); })
+      .finally(() => { if (!cancelled) setAsyncViewLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, viewingPast, viewHasJoin, JSON.stringify(viewSteps), authHeaders]);
+
+  const full = hasJoin ? (asyncFull ?? syncFull) : syncFull;
+  const joinPreviewLoading = (hasJoin && asyncFullLoading) || (viewingPast && viewHasJoin && asyncViewLoading);
+  const viewTable = viewingPast
+    ? (viewHasJoin ? (asyncView ?? syncFull).table : (src ? computeTable(src, steps, activeStepIndex).table : emptyTable))
+    : full.table;
 
   // ── Step mutations ──────────────────────────────────────────────────────────
 
@@ -297,7 +390,21 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
     if (pending.length) mutateSteps(prev => [...prev, ...pending.map(m => ({ op: "rename", params: { column: m.from, to: m.to } }))], next => ({ activeStepIndex: next.length - 1 }));
   }
 
-  // ── Save & Apply (import mode) ──────────────────────────────────────────────
+  // ── Save & Apply (import mode) / Save as dataset (preview mode) ────────────
+
+  function pollJob(id: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_BASE}/data-ingest/jobs/${id}`, { headers: authHeaders() });
+          if (!r.ok) return;
+          const job: JobResponse = await r.json();
+          if (job.status === "SUCCESS") { clearInterval(poll); resolve(); }
+          else if (job.status === "FAILED") { clearInterval(poll); reject(new Error(errMessage(job.error_message, "Pipeline failed"))); }
+        } catch { /* transient */ }
+      }, 2000);
+    });
+  }
 
   async function saveAndApply() {
     if (!jobId) return;
@@ -310,17 +417,30 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
       });
       if (!res.ok) throw new Error(await readError(res, "Commit failed"));
       setCommitProgress("Running pipeline…");
-      await new Promise<void>((resolve, reject) => {
-        const poll = setInterval(async () => {
-          try {
-            const r = await fetch(`${API_BASE}/data-ingest/jobs/${jobId}`, { headers: authHeaders() });
-            if (!r.ok) return;
-            const job: JobResponse = await r.json();
-            if (job.status === "SUCCESS") { clearInterval(poll); resolve(); }
-            else if (job.status === "FAILED") { clearInterval(poll); reject(new Error(errMessage(job.error_message, "Pipeline failed"))); }
-          } catch { /* transient */ }
-        }, 2000);
+      await pollJob(jobId);
+      navigate("/app/data-import");
+    } catch (e: any) { setCommitError(e.message); setCommitting(false); setCommitProgress(""); }
+  }
+
+  async function saveCombine() {
+    if (!selectedDatasetId || !activeWorkspace) return;
+    setCommitting(true); setCommitError(""); setCommitProgress("Dispatching pipeline…");
+    try {
+      const res = await fetch(`${API_BASE}/data-ingest/jobs/combine`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: activeWorkspace.id,
+          primary_dataset_id: selectedDatasetId,
+          transforms: steps.map(s => ({ type: s.op, ...s.params })),
+          new_dataset_name: saveMode === "new" ? saveName : null,
+          target_dataset_id: saveMode === "existing" ? saveExistingId : null,
+        }),
       });
+      if (!res.ok) throw new Error(await readError(res, "Combine failed"));
+      const job: JobResponse = await res.json();
+      setCommitProgress("Running pipeline…");
+      await pollJob(job.id);
       navigate("/app/data-import");
     } catch (e: any) { setCommitError(e.message); setCommitting(false); setCommitProgress(""); }
   }
@@ -360,6 +480,7 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
   }));
 
   const selectedDatasetName = datasets.find(d => d.id === selectedDatasetId)?.name ?? "dataset";
+  const currentDatasetId = tab === "import" ? importState.datasetId : selectedDatasetId;
 
   // ── JSX ─────────────────────────────────────────────────────────────────────
 
@@ -372,8 +493,8 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: "16px 28px 13px", borderBottom: "1px solid #ececef", background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Data Transformation</h1>
-            <p style={{ margin: "3px 0 0", fontSize: 12.5, color: "#71717a" }}>Steps run live on the preview. Click any column header for instant transforms.</p>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>Pipeline Studio</h1>
+            <p style={{ margin: "3px 0 0", fontSize: 12.5, color: "#71717a" }}>Steps run live on the preview. Save &amp; Apply processes the full dataset in the background.</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {/* Tab switcher */}
@@ -411,13 +532,80 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
               </div>
             )}
 
-            <button
-              onClick={tab === "import" ? saveAndApply : undefined}
-              disabled={tab !== "import" || committing || stagedLoading || !!stagedError}
-              style={{ background: "#0a0a0b", color: "#fff", border: "none", padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: tab === "import" && !committing ? "pointer" : "not-allowed", opacity: tab !== "import" || committing || stagedLoading || !!stagedError ? 0.5 : 1 }}
-            >{committing ? "Applying…" : "Save & Apply"}</button>
+            {tab === "import" ? (
+              <button
+                onClick={saveAndApply}
+                disabled={committing || stagedLoading || !!stagedError}
+                style={{ background: "#0a0a0b", color: "#fff", border: "none", padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: !committing ? "pointer" : "not-allowed", opacity: committing || stagedLoading || !!stagedError ? 0.5 : 1 }}
+              >{committing ? "Applying…" : "Save & Apply"}</button>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setSaveTargetOpen(v => !v); }}
+                disabled={committing || !selectedDatasetId || previewLoading || !!previewError}
+                style={{ background: "#0a0a0b", color: "#fff", border: "none", padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: !committing ? "pointer" : "not-allowed", opacity: committing || !selectedDatasetId || previewLoading || !!previewError ? 0.5 : 1 }}
+              >{committing ? "Saving…" : "Save as dataset"}</button>
+            )}
           </div>
         </div>
+
+        {/* ── Combine & Save modal (preview tab) ──────────────────────────────── */}
+        {tab === "preview" && saveTargetOpen && (
+          <div
+            onClick={() => !committing && setSaveTargetOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(10,10,11,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          >
+            <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: "100%", background: "#fff", borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Combine &amp; Save as Dataset</h2>
+                  <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#71717a" }}>
+                    Saves <strong>{selectedDatasetName}</strong>{steps.length > 0 ? ` with your ${steps.length} pipeline step${steps.length > 1 ? "s" : ""}` : ""} applied. Add a <strong>Join Dataset</strong> step from the Combine menu above to merge in other datasets before saving.
+                  </p>
+                </div>
+                <button onClick={() => setSaveTargetOpen(false)} disabled={committing} style={{ background: "none", border: "none", color: "#a1a1aa", cursor: "pointer", fontSize: 15, padding: 4 }}>✕</button>
+              </div>
+
+              {!hasJoin && (
+                <div style={{ fontSize: 12, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 11px" }}>
+                  No join steps yet — this will save {selectedDatasetName} on its own. Close this dialog, add a Join Dataset step, then reopen to combine multiple tables.
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#71717a", marginBottom: 6 }}>Save as</label>
+                <div style={{ display: "flex", padding: 3, background: "#f4f4f5", borderRadius: 9, gap: 2 }}>
+                  <button onClick={() => setSaveMode("new")} style={{ flex: 1, border: "none", padding: "7px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: saveMode === "new" ? "#0a0a0b" : "transparent", color: saveMode === "new" ? "#fff" : "#71717a" }}>New dataset</button>
+                  <button onClick={() => setSaveMode("existing")} style={{ flex: 1, border: "none", padding: "7px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: "pointer", background: saveMode === "existing" ? "#0a0a0b" : "transparent", color: saveMode === "existing" ? "#fff" : "#71717a" }}>Existing dataset (new version)</button>
+                </div>
+              </div>
+
+              <div>
+                {saveMode === "new" ? (
+                  <input autoFocus value={saveName} onInput={e => setSaveName((e.target as HTMLInputElement).value)} placeholder="New dataset name"
+                    style={{ width: "100%", padding: "9px 11px", border: "1px solid #ececef", borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                ) : (
+                  <select value={saveExistingId} onChange={e => setSaveExistingId(e.target.value)}
+                    style={{ width: "100%", padding: "9px 11px", border: "1px solid #ececef", borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box" }}>
+                    <option value="">Select dataset…</option>
+                    {datasets.filter(d => d.id !== selectedDatasetId).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                )}
+              </div>
+
+              {commitError && <div style={{ fontSize: 12, color: "#ef4444", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 11px" }}>{commitError}</div>}
+              {committing && commitProgress && <div style={{ fontSize: 12, color: "#71717a" }}>{commitProgress}</div>}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <button onClick={() => setSaveTargetOpen(false)} disabled={committing} style={{ background: "transparent", color: "#52525b", border: "1px solid #ececef", padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                <button
+                  onClick={saveCombine}
+                  disabled={committing || (saveMode === "new" ? !saveName.trim() : !saveExistingId)}
+                  style={{ background: "#0a0a0b", color: "#fff", border: "none", padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer", opacity: committing || (saveMode === "new" ? !saveName.trim() : !saveExistingId) ? 0.5 : 1 }}
+                >{committing ? "Saving…" : "Save"}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Workspace ───────────────────────────────────────────────────────── */}
         <div style={{ flex: 1, margin: "14px 28px 20px", border: "1px solid #ececef", borderRadius: 12, background: "#fff", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
@@ -490,10 +678,13 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
               {/* Viewing-past banner */}
               {viewingPast && (
                 <div style={{ flexShrink: 0, padding: "7px 16px", background: "#fffbeb", borderBottom: "1px solid #fde68a", fontSize: 11.5, color: "#b45309", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span>Viewing data at step <strong>{OPS[steps[activeStepIndex].op]?.lbl(steps[activeStepIndex].params)}</strong> — later steps are not applied.</span>
+                  <span>Viewing data at step <strong>{stepLabel({ type: steps[activeStepIndex].op, ...steps[activeStepIndex].params })}</strong> — later steps are not applied.</span>
                   <button onClick={() => setActiveStepIndex(steps.length - 1)} style={{ border: "none", background: "transparent", color: "#b45309", fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>Jump to latest</button>
                 </div>
               )}
+
+              {/* Join preview refresh (server-side, since join has no local apply) */}
+              {joinPreviewLoading && <div style={{ flexShrink: 0, padding: "7px 16px", background: "#f4f4f5", borderBottom: "1px solid #ececef", fontSize: 11.5, color: "#71717a" }}>Refreshing joined preview…</div>}
 
               {/* Commit error / progress */}
               {commitError && <div style={{ flexShrink: 0, padding: "7px 16px", background: "#fef2f2", borderBottom: "1px solid #fecaca", fontSize: 11.5, color: "#ef4444" }}>{commitError}</div>}
@@ -700,7 +891,7 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
                             <div key={i} onClick={() => setActiveStepIndex(i)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", borderRadius: 8, cursor: "pointer", background: active ? "#f4f4f5" : "transparent" }}>
                               <div style={{ width: 19, height: 19, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, background: err ? "#fef2f2" : active ? "#0a0a0b" : "#ececef", color: err ? "#ef4444" : active ? "#fff" : "#71717a" }}>{i + 1}</div>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{OPS[step.op]?.lbl(step.params) ?? step.op}</div>
+                                <div style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stepLabel({ type: step.op, ...step.params })}</div>
                                 {err && <div style={{ fontSize: 10.5, color: "#ef4444" }}>{err}</div>}
                               </div>
                               <button onClick={e => editStep(i, e)} style={{ background: "none", border: "none", padding: 3, cursor: "pointer", color: "#a1a1aa", display: "flex" }}
@@ -763,6 +954,25 @@ function PipelineStudio({ importState }: { importState: ImportState }) {
                           <select value={String(draftParams[f.key] ?? "")} onChange={e => setDraftParams(p => ({ ...p, [f.key]: e.target.value }))}
                             style={{ width: "100%", padding: "8px 10px", border: "1px solid #ececef", borderRadius: 7, fontSize: 12.5, outline: "none", background: "#fafafa", color: "#27272a" }}>
                             {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        )}
+                        {f.kind === "dataset" && (
+                          <select value={String(draftParams[f.key] ?? "")}
+                            onChange={e => setDraftParams(p => ({ ...p, [f.key]: e.target.value }))}
+                            disabled={datasetsLoading}
+                            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ececef", borderRadius: 7, fontSize: 12.5, outline: "none", background: "#fafafa", color: "#27272a" }}>
+                            <option value="">{datasetsLoading ? "Loading…" : "Select dataset…"}</option>
+                            {datasets.filter(d => d.id !== currentDatasetId).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                          </select>
+                        )}
+                        {f.kind === "column_right" && (
+                          <select value={String(draftParams[f.key] ?? "")}
+                            onChange={e => setDraftParams(p => ({ ...p, [f.key]: e.target.value }))}
+                            disabled={rightSchemaColumns.length === 0}
+                            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ececef", borderRadius: 7, fontSize: 12, outline: "none", background: "#fafafa", color: "#27272a", fontFamily: "'JetBrains Mono',monospace" }}>
+                            {rightSchemaColumns.length === 0
+                              ? <option value="">{rightSchemaLoading ? "Loading…" : "Select a dataset first"}</option>
+                              : rightSchemaColumns.map(cn => <option key={cn} value={cn}>{cn}</option>)}
                           </select>
                         )}
                         {f.kind === "text" && (

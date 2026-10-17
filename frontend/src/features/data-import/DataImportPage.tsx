@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/shared/PageHeader";
-import { Database, FileSpreadsheet, Upload, Plus, ArrowRight, Loader2, AlertCircle, RefreshCw, ChevronRight, Trash2 } from "lucide-react";
+import { Database, FileSpreadsheet, Upload, Plus, ArrowRight, Loader2, AlertCircle, RefreshCw, ChevronRight, Trash2, GitMerge } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { useAuthContext } from "../../lib/context/AuthContext";
 import { useWorkspaceContext } from "../../lib/context/WorkspaceContext";
@@ -39,6 +39,59 @@ interface DatasetVersion {
   dataset_schema: Record<string, string>;
 }
 
+interface LineageSource {
+  dataset_id: string;
+  dataset_name: string;
+  how: string;
+  left_on: string;
+  right_on: string;
+}
+
+interface LineageNode {
+  dataset_id: string;
+  dataset_name: string;
+  source_type: string;
+  origin_detail: string | null;
+  // Each edge into this dataset, with the upstream node it points at (null if
+  // that upstream dataset was unreachable/deleted/already visited — cycle guard).
+  sources: (LineageSource & { node: LineageNode | null })[];
+}
+
+/** Human label for where a dataset's data originally came from. A dataset with join
+ * sources was produced by a combine in Pipeline Studio, not a raw file upload — even
+ * though it's stored as source_type "parquet" like any other, so that takes priority. */
+function originLabel(sourceType: string, detail: string | null, hasSources: boolean): string {
+  if (hasSources) return "Combined dataset (Pipeline Studio)";
+  if (["csv", "xlsx", "parquet"].includes(sourceType)) {
+    return `Uploaded ${sourceType.toUpperCase()} file`;
+  }
+  return detail ? `${sourceType} · ${detail}` : `${sourceType} connection`;
+}
+
+/** Single-hop lineage endpoint, called recursively to build a multi-hop graph
+ * client-side. `visited` guards against cycles (shouldn't occur, but a join
+ * plan is user-authored data, not a DAG the server verifies is acyclic). */
+async function fetchLineageTree(
+  datasetId: string,
+  authHeaders: () => Record<string, string>,
+  depth: number,
+  visited: Set<string>,
+): Promise<LineageNode | null> {
+  if (depth <= 0 || visited.has(datasetId)) return null;
+  visited.add(datasetId);
+  const res = await fetch(`${API_BASE}/data-ingest/datasets/${datasetId}/lineage`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  const data: { dataset_id: string; dataset_name: string; source_type: string; origin_detail: string | null; sources: LineageSource[] } = await res.json();
+  const sources = await Promise.all(
+    data.sources.map(async (s) => ({ ...s, node: await fetchLineageTree(s.dataset_id, authHeaders, depth - 1, visited) })),
+  );
+  return {
+    dataset_id: data.dataset_id, dataset_name: data.dataset_name,
+    source_type: data.source_type, origin_detail: data.origin_detail,
+    sources,
+  };
+}
+
 interface DbForm {
   source_type: "postgres" | "mysql" | "snowflake" | "mssql";
   host: string;
@@ -48,6 +101,80 @@ interface DbForm {
   password: string;
   table: string;
   dataset_name: string;
+}
+
+/** Icon + color for a node's origin: file upload, DB connection, or a Pipeline
+ * Studio combine result (which also happens to be stored as source_type "parquet",
+ * so "has join sources" must take priority over source_type when picking a look). */
+function originVisual(sourceType: string, hasSources: boolean) {
+  if (hasSources) return { Icon: GitMerge, className: "bg-primary/10 text-primary" };
+  const isFile = ["csv", "xlsx", "parquet"].includes(sourceType);
+  return isFile
+    ? { Icon: FileSpreadsheet, className: "bg-accent-light text-accent" }
+    : { Icon: Database, className: "bg-warning-muted text-warning" };
+}
+
+/** Small colored pill showing where a node's data originated. */
+function OriginBadge({ sourceType, detail, hasSources }: { sourceType: string; detail: string | null; hasSources: boolean }) {
+  const { Icon, className } = originVisual(sourceType, hasSources);
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", className)}>
+      <Icon size={10} />
+      {originLabel(sourceType, detail, hasSources)}
+    </span>
+  );
+}
+
+/** One node in the lineage graph: an icon chip, dataset name, and its origin badge. */
+function LineageNodeChip({ name, sourceType, detail, hasSources, emphasis }: {
+  name: string; sourceType: string; detail: string | null; hasSources: boolean; emphasis?: boolean;
+}) {
+  const { Icon, className } = originVisual(sourceType, hasSources);
+  return (
+    <div className={cn(
+      "flex items-center gap-2.5 rounded-lg border px-3 py-2 min-w-0",
+      emphasis ? "border-primary/25 bg-primary/5" : "border-border-subtle bg-surface",
+    )}>
+      <div className={cn("size-6 rounded-full flex items-center justify-center shrink-0", className)}>
+        <Icon size={12} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-bold truncate">{name}</p>
+        <OriginBadge sourceType={sourceType} detail={detail} hasSources={hasSources} />
+      </div>
+    </div>
+  );
+}
+
+/** One join edge feeding into a dataset, rendered as a connector line down to a
+ * source node chip, recursing for any upstream joins that fed *that* source. */
+function LineageEdge({ edge }: { edge: LineageSource & { node: LineageNode | null } }) {
+  return (
+    <div className="relative pl-6">
+      {/* Connector: vertical trunk + curved elbow into the node, git-graph style */}
+      <div className="absolute left-[9px] top-0 bottom-0 w-px bg-border" />
+      <div className="absolute left-[9px] top-[18px] w-3 h-px bg-border" />
+      <div className="py-1.5">
+        {edge.node ? (
+          <LineageNodeChip
+            name={edge.node.dataset_name} sourceType={edge.node.source_type}
+            detail={edge.node.origin_detail} hasSources={edge.node.sources.length > 0}
+          />
+        ) : (
+          <div className="text-xs text-text-tertiary italic px-3 py-2">{edge.dataset_name} (unavailable)</div>
+        )}
+        <div className="flex items-center gap-1.5 pl-1 mt-1 text-[10px] font-mono text-text-tertiary">
+          <GitMerge size={10} className="text-primary" />
+          {edge.how} join · {edge.left_on} = {edge.right_on}
+        </div>
+      </div>
+      {edge.node && edge.node.sources.length > 0 && (
+        <div className="pl-3">
+          {edge.node.sources.map((s, i) => <LineageEdge key={i} edge={s} />)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatBytes(bytes: number | null): string {
@@ -73,6 +200,9 @@ export function DataImportPage() {
   const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
   const [detailVersions, setDetailVersions] = useState<DatasetVersion[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [expandedVersionIds, setExpandedVersionIds] = useState<Set<string>>(new Set());
+  const [detailLineage, setDetailLineage] = useState<LineageNode | null>(null);
+  const [detailLineageLoading, setDetailLineageLoading] = useState(false);
 
   // For append-to-existing flow
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
@@ -213,6 +343,12 @@ export function DataImportPage() {
     setDetailDatasetId(datasetId);
     setDetailLoading(true);
     setDetailVersions([]);
+    setExpandedVersionIds(new Set());
+    setDetailLineage(null);
+    setDetailLineageLoading(true);
+    fetchLineageTree(datasetId, authHeaders, 4, new Set())
+      .then(setDetailLineage)
+      .finally(() => setDetailLineageLoading(false));
     try {
       const res = await fetch(`${API_BASE}/data-ingest/datasets/${datasetId}/versions`, { headers: authHeaders() });
       if (res.ok) setDetailVersions(await res.json());
@@ -448,6 +584,33 @@ export function DataImportPage() {
                     {/* Detail panel */}
                     {detailDatasetId === ds.id && (
                       <div className="border-t border-border-subtle bg-surface-2/40 px-6 py-5 space-y-5">
+                        {/* Data origin & lineage — always shown; a plain import just shows one line */}
+                        {detailLineageLoading ? (
+                          <div className="flex items-center gap-2 text-text-tertiary text-sm py-2">
+                            <Loader2 size={14} className="animate-spin" /> Loading lineage…
+                          </div>
+                        ) : detailLineage && (
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-text-tertiary mb-3 flex items-center gap-1.5">
+                              <GitMerge size={11} /> Data Origin &amp; Lineage
+                            </p>
+                            <div className="rounded-xl border border-border-subtle bg-surface-2/40 p-4">
+                              <LineageNodeChip
+                                name={`${ds.name} (this dataset)`}
+                                sourceType={detailLineage.source_type}
+                                detail={detailLineage.origin_detail}
+                                hasSources={detailLineage.sources.length > 0}
+                                emphasis
+                              />
+                              {detailLineage.sources.length > 0 && (
+                                <div className="mt-1">
+                                  {detailLineage.sources.map((s, i) => <LineageEdge key={i} edge={s} />)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {detailLoading ? (
                           <div className="flex items-center gap-2 text-text-tertiary text-sm py-2">
                             <Loader2 size={14} className="animate-spin" /> Loading versions…
@@ -455,52 +618,56 @@ export function DataImportPage() {
                         ) : detailVersions.length === 0 ? (
                           <p className="text-sm text-text-tertiary py-2">No versions found.</p>
                         ) : (
-                          <>
-                            {/* Schema from latest version */}
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-widest text-text-tertiary mb-3">
-                                Schema · v{detailVersions[detailVersions.length - 1].version}
-                              </p>
-                              <div className="rounded-xl border border-border overflow-hidden">
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className="bg-surface-2 border-b border-border">
-                                      <th className="text-left px-4 py-2 font-bold text-text-secondary">Column</th>
-                                      <th className="text-left px-4 py-2 font-bold text-text-secondary">Type</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {Object.entries(detailVersions[detailVersions.length - 1].dataset_schema ?? {}).map(([col, type]) => (
-                                      <tr key={col} className="border-b border-border-subtle last:border-0 hover:bg-surface-2/50">
-                                        <td className="px-4 py-2 font-mono text-text">{col}</td>
-                                        <td className="px-4 py-2 text-text-tertiary">{type}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-
-                            {/* Version history */}
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-widest text-text-tertiary mb-3">
-                                Version History
-                              </p>
-                              <div className="space-y-2">
-                                {[...detailVersions].reverse().map((v) => (
-                                  <div key={v.id} className="flex items-center gap-4 rounded-xl border border-border-subtle bg-surface px-4 py-3 text-xs">
-                                    <span className="font-bold text-primary w-8">v{v.version}</span>
-                                    <span className="text-text-tertiary">{v.row_count.toLocaleString()} rows</span>
-                                    <span className="text-border-subtle">·</span>
-                                    <span className="text-text-tertiary">{v.column_count} cols</span>
-                                    <span className="text-border-subtle">·</span>
-                                    <span className="text-text-tertiary">{formatBytes(v.file_size)}</span>
-                                    <span className="ml-auto text-text-tertiary">{new Date(v.created_at).toLocaleDateString()}</span>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-text-tertiary mb-3">
+                              Version History
+                            </p>
+                            <div className="space-y-2">
+                              {[...detailVersions].reverse().map((v) => {
+                                const open = expandedVersionIds.has(v.id);
+                                return (
+                                  <div key={v.id} className="rounded-xl border border-border-subtle bg-surface overflow-hidden">
+                                    <button
+                                      onClick={() => setExpandedVersionIds((prev) => {
+                                        const next = new Set(prev);
+                                        next.has(v.id) ? next.delete(v.id) : next.add(v.id);
+                                        return next;
+                                      })}
+                                      className="w-full flex items-center gap-4 px-4 py-3 text-xs hover:bg-surface-2/50 transition-colors text-left"
+                                      title="View schema for this version"
+                                    >
+                                      <ChevronRight size={13} className={cn("text-text-tertiary transition-transform shrink-0", open && "rotate-90")} />
+                                      <span className="font-bold text-primary w-8">v{v.version}</span>
+                                      <span className="text-text-tertiary">{v.row_count.toLocaleString()} rows</span>
+                                      <span className="text-border-subtle">·</span>
+                                      <span className="text-text-tertiary">{v.column_count} cols</span>
+                                      <span className="text-border-subtle">·</span>
+                                      <span className="text-text-tertiary">{formatBytes(v.file_size)}</span>
+                                      <span className="ml-auto text-text-tertiary">{new Date(v.created_at).toLocaleDateString()}</span>
+                                    </button>
+                                    {open && (
+                                      <table className="w-full text-xs border-t border-border-subtle">
+                                        <thead>
+                                          <tr className="bg-surface-2 border-b border-border-subtle">
+                                            <th className="text-left px-4 py-2 font-bold text-text-secondary">Column</th>
+                                            <th className="text-left px-4 py-2 font-bold text-text-secondary">Type</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {Object.entries(v.dataset_schema ?? {}).map(([col, type]) => (
+                                            <tr key={col} className="border-b border-border-subtle last:border-0 hover:bg-surface-2/50">
+                                              <td className="px-4 py-2 font-mono text-text">{col}</td>
+                                              <td className="px-4 py-2 text-text-tertiary">{type}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    )}
                                   </div>
-                                ))}
-                              </div>
+                                );
+                              })}
                             </div>
-                          </>
+                          </div>
                         )}
                       </div>
                     )}

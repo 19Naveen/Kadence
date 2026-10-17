@@ -23,7 +23,7 @@ export interface Table {
 export interface FieldDef {
   key: string;
   label: string;
-  kind: "column" | "select" | "text" | "number";
+  kind: "column" | "select" | "text" | "number" | "dataset" | "column_right";
   options?: string[];
   placeholder?: string;
 }
