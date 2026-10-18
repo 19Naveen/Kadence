@@ -13,39 +13,23 @@ interface AuthCardLayoutProps {
 
 export function AuthCardLayout({ children, title, subtitle, footer }: AuthCardLayoutProps) {
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-bg px-4 py-10">
-      {/* Soft teal wash and faint grid, both token-driven so dark mode follows */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{ background: "radial-gradient(ellipse 80% 60% at 50% -10%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.03]"
-        style={{
-          backgroundImage:
-            "linear-gradient(hsl(var(--text)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--text)) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
-      />
-
-      <main className="w-full max-w-md animate-slide-up">
-        <div className="mb-8 flex justify-center">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-bg px-4 py-10">
+      <main className="w-full max-w-sm">
+        <div className="mb-6 flex justify-center">
           <Link to="/" aria-label="Kadence home">
-            <BrandMark size="lg" />
+            <BrandMark size="sm" />
           </Link>
         </div>
 
-        <div className="card p-8 shadow-soft-lg">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            {subtitle && <p className="mt-1 text-sm text-text-secondary">{subtitle}</p>}
+        <div className="rounded-lg border border-border bg-surface p-6">
+          <div className="mb-5">
+            <h1 className="text-lg font-semibold">{title}</h1>
+            {subtitle && <p className="mt-0.5 text-[13px] text-text-secondary">{subtitle}</p>}
           </div>
           {children}
         </div>
 
-        {footer && <div className="mt-6 text-center text-sm text-text-secondary">{footer}</div>}
+        {footer && <div className="mt-5 text-center text-[13px] text-text-secondary">{footer}</div>}
       </main>
     </div>
   );

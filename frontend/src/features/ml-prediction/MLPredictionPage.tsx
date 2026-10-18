@@ -143,28 +143,7 @@ function simulateBatch(model: ModelInfo, file: File): BatchResult {
 /*  Small pieces                                                       */
 /* ------------------------------------------------------------------ */
 function SimulatedBadge() {
-  return <span className="badge bg-signal-muted text-signal">Simulated</span>;
-}
-
-function ConfidenceGauge({ value, size = 112 }: { value: number; size?: number }) {
-  const radius = (size - 12) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - value);
-
-  return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--surface-3))" strokeWidth="6" />
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="6"
-          strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-700 ease-out" />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="font-mono text-xl font-semibold text-text">{(value * 100).toFixed(0)}%</span>
-        <span className="text-2xs text-text-tertiary">Confidence</span>
-      </div>
-    </div>
-  );
+  return <span className="badge bg-surface-2 text-text-secondary">Simulated</span>;
 }
 
 function ModelCard({ model, isSelected, onSelect }: {
@@ -175,16 +154,15 @@ function ModelCard({ model, isSelected, onSelect }: {
       onClick={onSelect}
       aria-pressed={isSelected}
       className={cn(
-        "w-full rounded-lg border p-3 text-left transition-colors",
-        isSelected ? "border-primary bg-primary-muted" : "border-border-subtle hover:border-border",
+        "w-full rounded-md px-2.5 py-2 text-left transition-colors",
+        isSelected ? "bg-primary-muted" : "hover:bg-surface-2",
       )}
     >
-      <p className="text-sm font-semibold text-text">{model.name}</p>
-      <p className="text-xs text-text-tertiary">{model.algorithm} · v{model.version}</p>
-      <div className="mt-2 text-xs">
-        <span className="text-text-tertiary">Sample accuracy </span>
-        <span className="font-mono font-medium text-text">{(model.accuracy * 100).toFixed(1)}%</span>
-      </div>
+      <span className="flex items-baseline justify-between gap-2">
+        <span className={cn("truncate text-[13px] font-medium", isSelected ? "text-primary" : "text-text")}>{model.name}</span>
+        <span className="tabular shrink-0 font-mono text-xs text-text-secondary">{(model.accuracy * 100).toFixed(1)}%</span>
+      </span>
+      <span className="block text-xs text-text-tertiary">{model.algorithm} · v{model.version}</span>
     </button>
   );
 }
@@ -246,35 +224,33 @@ function PlaygroundTab({
           <SimulatedBadge />
         </div>
         {!result && !isPredicting && (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-border-subtle p-10 text-center">
-            <p className="text-sm text-text-secondary">No prediction yet</p>
+          <div className="rounded-md bg-surface-2 px-4 py-8 text-center">
+            <p className="text-[13px] text-text-secondary">No prediction yet</p>
             <p className="mt-0.5 text-xs text-text-tertiary">Fill in the features and run a prediction.</p>
           </div>
         )}
         {isPredicting && (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-border-subtle p-10 text-center">
-            <LoaderCircle size={28} className="mb-3 animate-spin text-primary" />
-            <p className="text-sm text-text-secondary">Running simulated prediction…</p>
+          <div role="status" className="flex items-center justify-center gap-2 rounded-md bg-surface-2 px-4 py-8 text-[13px] text-text-secondary">
+            <LoaderCircle size={15} className="animate-spin text-text-tertiary" />
+            <p>Running simulated prediction…</p>
           </div>
         )}
         {result && !isPredicting && (
-          <div className="space-y-3">
-            <div className={cn(
-              "rounded-lg border p-5",
-              result.value === "Positive" ? "border-success/30 bg-success-muted" : "border-danger/30 bg-danger-muted",
-            )}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="section-label">Prediction</p>
-                  <p className={cn("mt-1 text-2xl font-semibold", result.value === "Positive" ? "text-success" : "text-danger")}>
-                    {result.value}
-                  </p>
-                </div>
-                <ConfidenceGauge value={result.confidence} />
+          <div className="divide-y divide-border-subtle">
+            <div className="flex items-end justify-between gap-4 pb-4">
+              <div>
+                <p className="section-label">Prediction</p>
+                <p className={cn("mt-0.5 text-lg font-semibold", result.value === "Positive" ? "text-success" : "text-danger")}>
+                  {result.value}
+                </p>
               </div>
+              <p className="text-right">
+                <span className="tabular block font-mono text-lg font-semibold text-text">{(result.confidence * 100).toFixed(0)}%</span>
+                <span className="section-label">Confidence</span>
+              </p>
             </div>
 
-            <div className="space-y-2.5 rounded-lg border border-border-subtle p-4">
+            <div className="space-y-2.5 py-4">
               <p className="section-label">Class probabilities</p>
               {result.probabilities.map((p) => (
                 <div key={p.label} className="space-y-1">
@@ -290,7 +266,7 @@ function PlaygroundTab({
               ))}
             </div>
 
-            <div className="space-y-2.5 rounded-lg border border-border-subtle p-4">
+            <div className="space-y-2.5 pt-4">
               <p className="section-label">Feature contributions (simulated)</p>
               {result.contributions.map((f) => (
                 <div key={f.feature} className="flex items-center gap-3 text-xs">
@@ -385,8 +361,8 @@ function BatchTab({ model }: { model: ModelInfo }) {
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-10 text-center transition-colors",
-          isDragging ? "border-primary bg-primary-muted" : file ? "border-success/30 bg-success-muted" : "border-border",
+          "flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-8 text-center transition-colors",
+          isDragging ? "border-primary bg-primary-muted" : file ? "border-border bg-surface-2" : "border-border",
         )}
       >
         <input ref={fileInputRef} type="file" accept={UPLOAD_EXTENSIONS.join(",")} className="hidden"
@@ -405,7 +381,7 @@ function BatchTab({ model }: { model: ModelInfo }) {
           </>
         )}
       </div>
-      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
 
       {file && !batchResult && (
         <button onClick={handleProcess} disabled={isProcessing} className="btn btn-primary w-full">
@@ -421,7 +397,7 @@ function BatchTab({ model }: { model: ModelInfo }) {
       )}
 
       {batchResult && (
-        <div className="rounded-lg border border-border bg-surface-2 p-5">
+        <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-text">Batch summary</h3>
             <SimulatedBadge />
@@ -429,19 +405,19 @@ function BatchTab({ model }: { model: ModelInfo }) {
           <p className="mt-0.5 text-xs text-text-tertiary">
             Generated {formatDateTime(batchResult.processedAt)}. Counts are made up for this preview, not read from your file.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          <dl className="mt-3 grid grid-cols-2 divide-border-subtle rounded-md border border-border sm:grid-cols-4 sm:divide-x">
             {[
               { label: "Total rows", value: formatCount(batchResult.total) },
               { label: "Positive", value: formatCount(batchResult.positive) },
               { label: "Negative", value: formatCount(batchResult.negative) },
               { label: "Avg confidence", value: `${(batchResult.avgConfidence * 100).toFixed(1)}%` },
             ].map((s) => (
-              <div key={s.label} className="rounded-md border border-border-subtle bg-surface p-3 text-center">
-                <p className="font-mono text-lg font-semibold text-text">{s.value}</p>
-                <p className="mt-0.5 text-xs text-text-tertiary">{s.label}</p>
+              <div key={s.label} className="px-3 py-2.5">
+                <dt className="text-xs text-text-tertiary">{s.label}</dt>
+                <dd className="tabular mt-0.5 font-mono text-[15px] font-semibold text-text">{s.value}</dd>
               </div>
             ))}
-          </div>
+          </dl>
           <button onClick={reset} className="btn btn-secondary btn-sm mt-4">Start over</button>
         </div>
       )}
@@ -460,20 +436,20 @@ function HistoryTab({ items, onClear }: { items: HistoryItem[]; onClear: () => v
         {items.length > 0 && <button onClick={onClear} className="btn btn-ghost btn-sm">Clear</button>}
       </div>
       {items.length === 0 ? (
-        <div className="rounded-lg border border-border-subtle p-10 text-center">
-          <p className="text-sm text-text-secondary">Nothing here yet</p>
+        <div className="rounded-md bg-surface-2 px-4 py-8 text-center">
+          <p className="text-[13px] text-text-secondary">Nothing here yet</p>
           <p className="mt-0.5 text-xs text-text-tertiary">Simulated predictions from the Playground tab appear here until you leave the page.</p>
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="divide-y divide-border-subtle rounded-md border border-border">
           {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle p-3">
+            <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-text">{item.model}</p>
+                <p className="text-[13px] font-medium text-text">{item.model}</p>
                 <p className="truncate font-mono text-xs text-text-tertiary">{item.input}</p>
               </div>
               <div className="shrink-0 text-right">
-                <p className={cn("text-sm font-medium", item.result === "Positive" ? "text-success" : "text-danger")}>
+                <p className={cn("text-[13px] font-medium", item.result === "Positive" ? "text-success" : "text-danger")}>
                   {item.result} ({(item.confidence * 100).toFixed(0)}%)
                 </p>
                 <p className="text-xs text-text-tertiary">{formatDateTime(item.at)}</p>
@@ -558,14 +534,14 @@ export function MLPredictionPage() {
         The models, predictions and batch results on this page are simulated. The same inputs always give the same output, but nothing is scored by a real model.
       </PreviewNotice>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <div className="space-y-4">
-          <div className="card space-y-2 p-3">
-            <div className="flex items-center justify-between px-1">
+      <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+        <div className="h-fit divide-y divide-border rounded-lg border border-border bg-surface">
+          <div className="space-y-1.5 p-2">
+            <div className="flex items-center justify-between px-1 pt-1">
               <p className="section-label">Sample models</p>
               <SimulatedBadge />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-0.5">
               {sampleModels.map((model) => (
                 <ModelCard key={model.id} model={model} isSelected={selectedModelId === model.id}
                   onSelect={() => selectModel(model.id)} />
@@ -573,9 +549,9 @@ export function MLPredictionPage() {
             </div>
           </div>
 
-          <div className="card space-y-2 p-3">
-            <p className="section-label px-1">Details</p>
-            <div className="space-y-1.5 px-1 text-xs">
+          <div className="space-y-2 p-3">
+            <p className="section-label">Details</p>
+            <div className="space-y-1.5 text-xs">
               {[
                 { label: "Algorithm", value: selectedModel.algorithm },
                 { label: "Version", value: `v${selectedModel.version}` },
@@ -588,27 +564,27 @@ export function MLPredictionPage() {
                 </div>
               ))}
             </div>
-            <div className="border-t border-border-subtle px-1 pt-2">
+            <div className="border-t border-border-subtle pt-2">
               <p className="section-label mb-1.5">Features</p>
               <div className="flex flex-wrap gap-1">
                 {selectedModel.features.map((f) => (
-                  <span key={f} className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-2xs font-medium text-text-secondary">{f}</span>
+                  <span key={f} className="badge bg-surface-2 font-mono font-normal text-text-secondary">{f}</span>
                 ))}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="card overflow-hidden">
-          <div className="border-b border-border-subtle p-1.5">
-            <div role="tablist" aria-label="Prediction modes" className="flex rounded-md bg-surface-2 p-0.5">
+        <div className="min-w-0 rounded-lg border border-border bg-surface">
+          <div className="border-b border-border px-3">
+            <div role="tablist" aria-label="Prediction modes" className="-mb-px flex gap-4">
               {TABS.map((tab) => (
                 <button key={tab.key} role="tab" id={`pred-tab-${tab.key}`}
                   aria-selected={activeTab === tab.key} aria-controls={`pred-panel-${tab.key}`}
                   tabIndex={activeTab === tab.key ? 0 : -1}
                   onClick={() => setActiveTab(tab.key)} onKeyDown={onTabKeyDown}
-                  className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    activeTab === tab.key ? "bg-surface text-text shadow-xs" : "text-text-tertiary hover:text-text-secondary")}>
+                  className={cn("border-b-2 px-0.5 py-2.5 text-[13px] font-medium transition-colors",
+                    activeTab === tab.key ? "border-primary text-text" : "border-transparent text-text-tertiary hover:text-text-secondary")}>
                   {tab.label}
                 </button>
               ))}

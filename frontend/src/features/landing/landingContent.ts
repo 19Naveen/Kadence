@@ -4,12 +4,11 @@ export interface Feature {
   Icon: LucideIcon;
   title: string;
   description: string;
-  /** Not built yet: shown with a "Coming soon" badge. */
+  /** Not built yet: shown with a "Coming soon" label. */
   soon?: boolean;
 }
 
 export interface Step {
-  number: string;
   title: string;
   description: string;
 }
@@ -53,22 +52,18 @@ export const features: Feature[] = [
 
 export const steps: Step[] = [
   {
-    number: "01",
     title: "Bring in your data",
     description: "Upload a file or connect a database. Each import is saved as a new, versioned dataset.",
   },
   {
-    number: "02",
     title: "Review and shape",
     description: "Use Pipeline Studio to filter, join, group and add columns, checking a live preview as you go.",
   },
   {
-    number: "03",
     title: "Ask with SQL",
     description: "Query the latest version of your datasets in Query Studio.",
   },
   {
-    number: "04",
     title: "Chart the results",
     description: "Turn a dataset into quick charts to see what it shows.",
   },

@@ -25,13 +25,13 @@ export function WorkspaceSettingsPage() {
       <>
         <PageHeader title="Workspace settings" />
         {loadError ? (
-          <div role="alert" className="card flex flex-col items-start gap-3 border-danger/30 bg-danger-muted">
-            <p className="text-sm text-danger">{loadError}</p>
+          <div role="alert" className="flex flex-col items-start gap-3 rounded-lg border border-danger/30 bg-danger-muted p-4">
+            <p className="text-[13px] text-danger">{loadError}</p>
             <button className="btn btn-secondary btn-sm" onClick={() => void refetch()}>Try again</button>
           </div>
         ) : (
-          <div className="card flex flex-col items-start gap-3">
-            <p className="text-sm text-text-secondary">You don't have a workspace yet.</p>
+          <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-surface p-4">
+            <p className="text-[13px] text-text-secondary">You don't have a workspace yet.</p>
             <button className="btn btn-primary btn-sm" onClick={() => navigate("/onboarding")}>Create workspace</button>
           </div>
         )}
@@ -78,7 +78,7 @@ export function WorkspaceSettingsPage() {
     {
       label: "Your role",
       value: isOwner ? (
-        <span className="badge bg-primary-muted text-primary">Owner</span>
+        <span className="badge bg-surface-2 text-text-secondary">Owner</span>
       ) : (
         <span className="badge bg-surface-2 text-text-secondary">Member</span>
       ),
@@ -86,32 +86,32 @@ export function WorkspaceSettingsPage() {
   ];
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-3xl">
       <PageHeader title="Workspace settings" subtitle={`Details for ${ws.name}.`} />
 
-      <section aria-labelledby="general-heading" className="card p-0">
-        <div className="border-b border-border-subtle px-6 py-4">
-          <h2 id="general-heading" className="text-base font-semibold">General</h2>
+      <section aria-labelledby="general-heading" className="mb-6 rounded-lg border border-border bg-surface">
+        <div className="border-b border-border px-4 py-3">
+          <h2 id="general-heading" className="text-sm font-semibold">General</h2>
           <p className="mt-0.5 text-xs text-text-secondary">Renaming a workspace isn't available yet.</p>
         </div>
         <dl className="divide-y divide-border-subtle">
           {details.map((d) => (
-            <div key={d.label} className="grid gap-1 px-6 py-4 sm:grid-cols-[180px_1fr] sm:gap-4">
-              <dt className="text-sm text-text-secondary">{d.label}</dt>
-              <dd className="min-w-0 break-words text-sm font-medium text-text">{d.value}</dd>
+            <div key={d.label} className="grid gap-1 px-4 py-3 sm:grid-cols-[180px_1fr] sm:gap-4">
+              <dt className="text-[13px] text-text-secondary">{d.label}</dt>
+              <dd className="min-w-0 break-words text-[13px] font-medium text-text">{d.value}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <section aria-labelledby="danger-heading" className="card border-danger/30 p-0">
-        <div className="border-b border-danger/20 px-6 py-4">
-          <h2 id="danger-heading" className="text-base font-semibold text-danger">Danger zone</h2>
+      <section aria-labelledby="danger-heading" className="rounded-lg border border-danger/30 bg-surface">
+        <div className="border-b border-danger/20 px-4 py-3">
+          <h2 id="danger-heading" className="text-sm font-semibold text-danger">Danger zone</h2>
         </div>
-        <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-sm font-medium">Delete this workspace</p>
-            <p className="mt-0.5 text-sm text-text-secondary">
+            <p className="text-[13px] font-medium">Delete this workspace</p>
+            <p className="mt-0.5 text-[13px] text-text-secondary">
               Permanently removes the workspace and every dataset in it. This can't be undone.
               {!isOwner && " Only the workspace owner can do this."}
             </p>
@@ -137,8 +137,8 @@ export function WorkspaceSettingsPage() {
         }
       >
         <form id="delete-workspace-form" onSubmit={handleDelete} className="space-y-4">
-          <div role="note" className="flex items-start gap-3 rounded-lg bg-danger-muted px-3 py-2.5 text-sm text-danger">
-            <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+          <div role="note" className="flex items-start gap-2.5 rounded-md bg-danger-muted px-3 py-2.5 text-[13px] text-danger">
+            <TriangleAlert size={15} className="mt-0.5 shrink-0" />
             <p>Uploaded files and every dataset version in this workspace are deleted with it.</p>
           </div>
           <div>
@@ -154,7 +154,7 @@ export function WorkspaceSettingsPage() {
               spellCheck={false}
             />
           </div>
-          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
         </form>
       </Dialog>
     </div>

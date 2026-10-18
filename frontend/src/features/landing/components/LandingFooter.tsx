@@ -5,8 +5,8 @@ const linkClass = "text-sm text-text-secondary transition-colors hover:text-text
 
 export function LandingFooter() {
   return (
-    <footer className="border-t border-border px-6 py-12">
-      <div className="mx-auto max-w-7xl">
+    <footer className="border-t border-border px-6 py-10">
+      <div className="mx-auto max-w-6xl">
         <div className="flex flex-col items-start justify-between gap-8 md:flex-row">
           <div className="space-y-3">
             <BrandMark size="sm" />

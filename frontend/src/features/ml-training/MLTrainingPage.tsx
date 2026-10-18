@@ -277,17 +277,7 @@ function ModelStep({ config, setConfig }: { config: TrainingConfig; setConfig: S
             >
               <div className="mb-1 flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-text">{alg.value}</p>
-                <span
-                  className={cn(
-                    "rounded-sm px-1.5 py-0.5 text-2xs font-medium",
-                    alg.speed === "Fast" ? "bg-success-muted text-success"
-                      : alg.speed === "Instant" ? "bg-info-muted text-info"
-                        : alg.speed === "Slow" ? "bg-warning-muted text-warning"
-                          : "bg-surface-3 text-text-tertiary",
-                  )}
-                >
-                  {alg.speed}
-                </span>
+                <span className="text-xs text-text-tertiary">{alg.speed}</span>
               </div>
               <p className="text-xs leading-relaxed text-text-tertiary">{alg.description}</p>
             </button>

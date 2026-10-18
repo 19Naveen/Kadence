@@ -45,8 +45,7 @@ const quoteIdent = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const describe = (w: Pick<Widget, "aggregation" | "measure">) => `${AGG_LABEL[w.aggregation]}${w.measure ? ` of ${w.measure}` : " of rows"}`;
 
 function MiniLineChart({ data }: { data: Point[] }) {
-  const gradId = useId();
-  if (data.length < 2) return <p className="py-10 text-center text-sm text-text-tertiary">Not enough points to plot a line.</p>;
+  if (data.length < 2) return <p className="py-10 text-center text-[13px] text-text-tertiary">Not enough points to plot a line.</p>;
   const values = data.map((d) => d.value);
   const max = Math.max(...values);
   const min = Math.min(...values);
@@ -64,21 +63,15 @@ function MiniLineChart({ data }: { data: Point[] }) {
 
   return (
     <div>
-      <div className="mb-1 flex justify-between text-xs text-text-tertiary tabular">
+      <div className="mb-1 flex justify-between font-mono text-xs text-text-tertiary tabular">
         <span>High {fmtNum(max)}</span>
         <span>Low {fmtNum(min)}</span>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Line chart of ${data.length} points`}>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <polyline points={area} fill={`url(#${gradId})`} />
-        <polyline points={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={area} fill="hsl(var(--primary) / 0.06)" />
+        <polyline points={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         {pts.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="3" fill="hsl(var(--primary))">
+          <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="hsl(var(--primary))">
             <title>{`${p.d.label}: ${fmtNum(p.d.value)}`}</title>
           </circle>
         ))}
@@ -92,7 +85,7 @@ function MiniLineChart({ data }: { data: Point[] }) {
 }
 
 function MiniBarChart({ data }: { data: Point[] }) {
-  if (data.length === 0) return <p className="py-10 text-center text-sm text-text-tertiary">No data to chart.</p>;
+  if (data.length === 0) return <p className="py-10 text-center text-[13px] text-text-tertiary">No data to chart.</p>;
   // Scale to the widest positive and negative bars so negatives are drawn left of a shared baseline.
   const posMax = Math.max(0, ...data.map((d) => d.value));
   const negMax = Math.max(0, ...data.map((d) => -d.value));
@@ -125,8 +118,8 @@ function MiniBarChart({ data }: { data: Point[] }) {
 function KPICard({ value, label }: { value: number | null; label: string }) {
   return (
     <div className="py-4">
-      <div className="text-4xl font-semibold tracking-tight tabular">{value == null ? "—" : fmtNum(value)}</div>
-      <p className="mt-2 text-sm text-text-secondary">{label}, across all rows</p>
+      <div className="font-mono text-2xl font-semibold tabular">{value == null ? "—" : fmtNum(value)}</div>
+      <p className="mt-1 text-[13px] text-text-secondary">{label}, across all rows</p>
     </div>
   );
 }
@@ -143,7 +136,7 @@ function WidgetCard({ widget, datasetName, removed, onRemove }: {
     : `${describe(widget)} by ${widget.dimension} · top ${widget.topN} groups`;
 
   return (
-    <div className="card flex flex-col gap-4">
+    <div className="card flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold">{widget.title}</h3>
@@ -157,7 +150,7 @@ function WidgetCard({ widget, datasetName, removed, onRemove }: {
           </div>
         ) : (
           <button type="button" className="btn-icon shrink-0" aria-label={`Remove chart ${widget.title}`} onClick={() => setConfirming(true)}>
-            <Trash2 size={16} />
+            <Trash2 size={15} />
           </button>
         )}
       </div>
@@ -171,7 +164,7 @@ function WidgetCard({ widget, datasetName, removed, onRemove }: {
       <p className="flex items-center gap-1.5 border-t border-border-subtle pt-3 text-xs text-text-tertiary">
         <Database size={12} aria-hidden="true" />
         <span className="truncate">{datasetName}</span>
-        {removed && <span className="badge bg-warning-muted text-warning">Dataset removed</span>}
+        {removed && <span className="badge bg-signal-muted text-signal">Dataset removed</span>}
       </p>
     </div>
   );
@@ -296,7 +289,7 @@ export function EDADashboardsPage() {
               {datasets.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
             <button type="button" onClick={() => setIsAdding(true)} disabled={addDisabled} className="btn btn-primary">
-              {columnsLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}
+              {columnsLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={14} />}
               {columnsLoading ? "Loading columns…" : "Add chart"}
             </button>
           </>
@@ -304,14 +297,14 @@ export function EDADashboardsPage() {
       />
 
       {columnsError && (
-        <div role="alert" className="mb-6 rounded-lg border border-danger/20 bg-danger-muted p-3 text-sm text-danger">{columnsError}</div>
+        <div role="alert" className="mb-5 rounded-md border border-danger/20 bg-danger-muted px-3 py-2 text-[13px] text-danger">{columnsError}</div>
       )}
 
       {isAdding && (
-        <form onSubmit={handleAddWidget} className="card mb-6" aria-label="New chart">
+        <form onSubmit={handleAddWidget} className="card mb-5" aria-label="New chart">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-semibold">New chart</h2>
-            <button type="button" onClick={closeForm} className="btn-icon" aria-label="Close new chart form"><X size={17} /></button>
+            <h2 className="text-sm font-semibold">New chart</h2>
+            <button type="button" onClick={closeForm} className="btn-icon" aria-label="Close new chart form"><X size={16} /></button>
           </div>
           <fieldset disabled={submitting} className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
             <div>
@@ -365,7 +358,7 @@ export function EDADashboardsPage() {
             )}
           </fieldset>
           {formError && (
-            <div role="alert" className="mt-4 rounded-lg border border-danger/20 bg-danger-muted p-3 text-sm text-danger">{formError}</div>
+            <div role="alert" className="mt-4 rounded-md border border-danger/20 bg-danger-muted px-3 py-2 text-[13px] text-danger">{formError}</div>
           )}
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" className="btn btn-secondary" onClick={closeForm}>Cancel</button>
@@ -380,18 +373,18 @@ export function EDADashboardsPage() {
       {datasetsLoading ? (
         <PageLoading />
       ) : noDatasets && widgets.length === 0 ? (
-        <div className="card mx-auto max-w-md text-center">
-          <BarChart3 size={22} className="mx-auto mb-3 text-text-tertiary" aria-hidden="true" />
+        <div className="rounded-lg border border-border bg-surface px-6 py-10 text-center">
+          <BarChart3 size={20} className="mx-auto mb-2 text-text-tertiary" aria-hidden="true" />
           <h2 className="text-base font-semibold">No datasets yet</h2>
-          <p className="mt-1 text-sm text-text-secondary">Import a dataset first, then build charts on its latest version here.</p>
+          <p className="mt-1 text-[13px] text-text-secondary">Import a dataset first, then build charts on its latest version here.</p>
           <Link to="/app/data-import" className="btn btn-primary mt-4">Import data</Link>
         </div>
       ) : widgets.length === 0 ? (
         !isAdding && (
-          <div className="card mx-auto max-w-md text-center">
-            <BarChart3 size={22} className="mx-auto mb-3 text-text-tertiary" aria-hidden="true" />
+          <div className="rounded-lg border border-border bg-surface px-6 py-10 text-center">
+            <BarChart3 size={20} className="mx-auto mb-2 text-text-tertiary" aria-hidden="true" />
             <h2 className="text-base font-semibold">No charts yet</h2>
-            <p className="mt-1 text-sm text-text-secondary">Add a chart to explore the selected dataset. Values are calculated from its latest version.</p>
+            <p className="mx-auto mt-1 max-w-md text-[13px] text-text-secondary">Add a chart to explore the selected dataset. Values are calculated from its latest version.</p>
             <button type="button" onClick={() => setIsAdding(true)} disabled={addDisabled} className="btn btn-primary mt-4">
               {columnsLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}
               {columnsLoading ? "Loading columns…" : "Add your first chart"}
@@ -399,7 +392,7 @@ export function EDADashboardsPage() {
           </div>
         )
       ) : (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {widgets.map((w) => {
             const live = datasetNames.get(w.datasetId);
             return (

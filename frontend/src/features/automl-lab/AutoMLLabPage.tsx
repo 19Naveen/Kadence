@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LoaderCircle, Sparkles } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { PageHeader } from "../../components/shared/PageHeader";
 import { PreviewNotice } from "../../components/shared/PreviewNotice";
 import { useDatasets } from "../../lib/hooks/useDatasets";
@@ -52,66 +52,64 @@ export function AutoMLLabPage() {
       <PreviewNotice />
 
       {loading ? (
-        <div className="card flex items-center justify-center gap-2 p-12 text-sm text-text-secondary">
-          <LoaderCircle size={16} className="animate-spin" /> Loading datasets…
+        <div role="status" className="flex items-center gap-2 py-10 text-[13px] text-text-tertiary">
+          <LoaderCircle size={15} className="animate-spin" /> Loading datasets…
         </div>
       ) : datasets.length === 0 ? (
-        <div className="card mx-auto max-w-xl p-10 text-center">
+        <div className="rounded-lg border border-border bg-surface px-6 py-10 text-center">
           <h2 className="text-base font-semibold text-text">No datasets yet</h2>
-          <p className="mt-1 text-sm text-text-secondary">Import a dataset first, then come back to compare models on it.</p>
+          <p className="mt-1 text-[13px] text-text-secondary">Import a dataset first, then come back to compare models on it.</p>
           <Link to="/app/data-import" className="btn btn-primary mt-4">Go to data sources</Link>
         </div>
       ) : isRunning ? (
-        <div className="card flex flex-col items-center p-12 text-center">
-          <LoaderCircle size={36} className="animate-spin text-primary" />
-          <h2 className="mt-4 text-lg font-semibold text-text">Comparing candidate models…</h2>
-          <p className="mt-1 text-sm text-text-secondary">Simulated run on “{dataset?.name}”. This takes a few seconds.</p>
+        <div role="status" className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-4">
+          <LoaderCircle size={16} className="shrink-0 animate-spin text-text-tertiary" />
+          <div>
+            <p className="text-[13px] font-medium text-text">Comparing candidate models…</p>
+            <p className="text-xs text-text-secondary">Simulated run on “{dataset?.name}”. This takes a few seconds.</p>
+          </div>
         </div>
       ) : results ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <section aria-labelledby="automl-results">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-text">
-                Candidate models <span className="badge ml-2 bg-signal-muted text-signal">Simulated</span>
+              <h2 id="automl-results" className="flex items-center gap-2 text-sm font-semibold text-text">
+                Candidate models <span className="badge bg-surface-2 text-text-secondary">Simulated</span>
               </h2>
-              <p className="text-sm text-text-secondary">Sample ranking for “{dataset?.name}”. These scores aren't measured.</p>
+              <p className="text-xs text-text-secondary">Sample ranking for “{dataset?.name}”. These scores aren't measured.</p>
             </div>
             <button onClick={() => setResults(null)} className="btn btn-secondary btn-sm">Start over</button>
           </div>
 
-          <div className="grid gap-3">
-            {results.map((r) => (
-              <div key={r.id} className="card flex flex-wrap items-center justify-between gap-4 p-5">
-                <div className="flex items-center gap-4">
-                  <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-surface-2 font-mono font-semibold text-primary">
-                    {r.id}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-text">{r.name}</p>
-                    <p className="text-xs text-text-tertiary">Complexity: <span className="text-text-secondary">{r.complexity}</span></p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="section-label">Sample score</p>
-                  <p className="font-mono text-2xl font-semibold text-primary">{r.score.toFixed(3)}</p>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-text-tertiary">
+                  <th scope="col" className="w-14 px-4 py-2 text-right font-medium">Rank</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Model</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Complexity</th>
+                  <th scope="col" className="px-4 py-2 text-right font-medium">Sample score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => (
+                  <tr key={r.id} className="table-row last:border-0">
+                    <td className="tabular px-4 py-2 text-right font-mono text-text-tertiary">{r.id}</td>
+                    <td className="px-3 py-2 font-medium text-text">{r.name}</td>
+                    <td className="px-3 py-2 text-text-secondary">{r.complexity}</td>
+                    <td className="tabular px-4 py-2 text-right font-mono">{r.score.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
       ) : (
-        <div className="card mx-auto flex max-w-xl flex-col gap-5 p-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-primary-muted text-primary">
-              <Sparkles size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-text">Compare models on a dataset</h2>
-              <p className="text-sm text-text-secondary">Pick a dataset and run a simulated comparison.</p>
-            </div>
-          </div>
+        <section aria-labelledby="automl-setup" className="max-w-lg rounded-lg border border-border bg-surface p-5">
+          <h2 id="automl-setup" className="text-sm font-semibold text-text">Compare models on a dataset</h2>
+          <p className="mt-0.5 text-[13px] text-text-secondary">Pick a dataset and run a simulated comparison.</p>
 
-          <div>
+          <div className="mt-4">
             <label htmlFor="automl-dataset" className="field-label">Dataset</label>
             <select id="automl-dataset" className="input" value={datasetId} onChange={(e) => setDatasetId(e.target.value)}>
               <option value="">Choose a dataset…</option>
@@ -121,8 +119,8 @@ export function AutoMLLabPage() {
             </select>
           </div>
 
-          <button onClick={run} disabled={!dataset} className="btn btn-primary self-start">Run comparison</button>
-        </div>
+          <button onClick={run} disabled={!dataset} className="btn btn-primary mt-4">Run comparison</button>
+        </section>
       )}
     </div>
   );

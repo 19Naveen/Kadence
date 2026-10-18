@@ -35,19 +35,19 @@ export function AboutPage() {
     <div className="max-w-2xl">
       <PageHeader title="Your profile" subtitle="The details Kadence holds for your account." />
 
-      <section className="card p-0" aria-label="Account details">
+      <section className="rounded-lg border border-border bg-surface" aria-label="Account details">
         <dl className="divide-y divide-border-subtle">
           {rows.map((r) => (
-            <div key={r.label} className="grid gap-1 px-6 py-4 sm:grid-cols-[180px_1fr] sm:gap-4">
-              <dt className="text-sm text-text-secondary">{r.label}</dt>
-              <dd className="min-w-0 break-words text-sm font-medium text-text">{r.value}</dd>
+            <div key={r.label} className="grid gap-1 px-4 py-3 sm:grid-cols-[180px_1fr] sm:gap-4">
+              <dt className="text-[13px] text-text-secondary">{r.label}</dt>
+              <dd className="min-w-0 break-words text-[13px] font-medium text-text">{r.value}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <div role="note" className="mt-4 flex items-start gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm">
-        <Info size={17} className="mt-0.5 shrink-0 text-text-tertiary" />
+      <div role="note" className="mt-4 flex items-start gap-2.5 rounded-md border border-border bg-surface-2 px-3 py-2.5 text-[13px]">
+        <Info size={15} className="mt-0.5 shrink-0 text-text-tertiary" />
         <p className="text-text-secondary">
           Editing your profile and changing your password aren't available yet. These details are read-only for now.
         </p>

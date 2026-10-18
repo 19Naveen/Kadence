@@ -39,7 +39,7 @@ export function SigninPage() {
       footer={
         <>
           Don't have an account?{" "}
-          <Link to="/signup" className="font-semibold text-primary hover:underline">Create account</Link>
+          <Link to="/signup" className="font-medium text-primary hover:underline">Create account</Link>
         </>
       }
     >
@@ -62,12 +62,12 @@ export function SigninPage() {
         <PasswordField id="signin-password" label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
 
         {error && (
-          <p role="alert" className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3 text-sm text-danger">
+          <p role="alert" className="rounded-md border border-danger/20 bg-danger-muted px-3 py-2 text-[13px] text-danger">
             {error}
           </p>
         )}
 
-        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-2 h-10 w-full">
+        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-1 w-full">
           {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </form>

@@ -46,7 +46,7 @@ export function SignupPage() {
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/signin" className="font-semibold text-primary hover:underline">Sign in</Link>
+          <Link to="/signin" className="font-medium text-primary hover:underline">Sign in</Link>
         </>
       }
     >
@@ -101,12 +101,12 @@ export function SignupPage() {
         </div>
 
         {error && (
-          <p role="alert" className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3 text-sm text-danger">
+          <p role="alert" className="rounded-md border border-danger/20 bg-danger-muted px-3 py-2 text-[13px] text-danger">
             {error}
           </p>
         )}
 
-        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-2 h-10 w-full">
+        <button type="submit" disabled={isSubmitting} className="btn btn-primary mt-1 w-full">
           {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </form>

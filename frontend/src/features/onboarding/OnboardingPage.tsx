@@ -39,13 +39,13 @@ export function OnboardingPage() {
       footer={
         <>
           {user ? <>Signed in as {user.email}. </> : null}
-          <button type="button" onClick={handleSignOut} className="font-semibold text-primary hover:underline">
+          <button type="button" onClick={handleSignOut} className="font-medium text-primary hover:underline">
             Sign out
           </button>
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="workspace-name" className="field-label">
             Workspace name <span className="text-danger" aria-hidden="true">*</span>
@@ -80,12 +80,12 @@ export function OnboardingPage() {
         </div>
 
         {error && (
-          <p role="alert" className="rounded-lg border border-danger/20 bg-danger-muted px-4 py-3 text-sm text-danger">
+          <p role="alert" className="rounded-md border border-danger/20 bg-danger-muted px-3 py-2 text-[13px] text-danger">
             {error}
           </p>
         )}
 
-        <button type="submit" disabled={isSubmitting || !name.trim()} className="btn btn-primary h-10 w-full">
+        <button type="submit" disabled={isSubmitting || !name.trim()} className="btn btn-primary w-full">
           {isSubmitting ? "Creating…" : "Create workspace"}
         </button>
       </form>

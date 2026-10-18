@@ -74,15 +74,21 @@ frontend/
     │   │   └── SignupPage.tsx     # Registration → /onboarding
     │   ├── onboarding/
     │   │   └── OnboardingPage.tsx # Workspace creation; no AppShell
-    │   ├── data-import/
-    │   │   └── DataImportPage.tsx # "Data sources": library, upload/connect dialogs, details, join two
-    │   ├── data-transform/        # Pipeline Studio
-    │   │   ├── DataTransformPage.tsx # Layout, source loading, steps + undo/redo, save
-    │   │   ├── usePipeline.ts     # Evaluates steps, snapshot per step (server preview for join/append)
-    │   │   ├── PipelineRail.tsx   # Step rail with per-step row/column deltas
-    │   │   ├── StepPalette.tsx    # Searchable op picker (/ or Cmd+K)
-    │   │   ├── StepEditor.tsx     # Step form + JoinBuilder + AppendBuilder, live draft preview
-    │   │   ├── DataGrid.tsx       # Preview table, column profiles, quick actions
+    │   ├── data-import/           # "Data sources" (full-bleed): list + detail split view
+    │   │   ├── DataImportPage.tsx # Toolbar, dataset list, selection bar (Join / Delete), drop-anywhere
+    │   │   ├── DatasetDetail.tsx  # Detail pane: Preview / Columns / Versions / Lineage tabs
+    │   │   ├── AddDataDialog.tsx  # "Source → Details" load flow (files or database)
+    │   │   └── sources.tsx        # Source labels, DB default ports, joinLaunch()
+    │   ├── data-transform/        # Pipeline Studio (Power Query-style)
+    │   │   ├── DataTransformPage.tsx # Layout, source loading, steps + undo/redo, save/discard
+    │   │   ├── Ribbon.tsx         # Home / Transform / Add column / Combine command tabs
+    │   │   ├── DatasetsPane.tsx   # Left pane: datasets, quick Merge / Append into the current one
+    │   │   ├── AppliedSteps.tsx   # Right pane: applied steps with row/column deltas
+    │   │   ├── DataGrid.tsx       # Grid: type glyphs, column quality profile, column selection + menu
+    │   │   ├── StepDialogs.tsx    # StepDialog (generic), MergeDialog (join), AppendDialog
+    │   │   ├── StepFields.tsx     # Shared field inputs, TypeGlyph, useOtherDataset
+    │   │   ├── StepPalette.tsx    # Searchable step picker (Ctrl/Cmd+K, /)
+    │   │   ├── usePipeline.ts     # Evaluates steps; snapshot per step (server preview for join/append)
     │   │   └── launch.ts          # Router state: import review vs shape (+ preset steps)
     │   ├── query-studio/
     │   │   └── QueryStudioPage.tsx
@@ -281,16 +287,16 @@ Built on TailwindCSS 4 with a token layer. Light theme by default; `[data-theme=
 |---|---|---|
 | `bg` / `surface` / `surface-2/3` | `#F4F5F7` / white / greys | Canvas, cards, wells |
 | `text` / `text-secondary` / `text-tertiary` | `#15171C` … | Ink and supporting text (use `text-text-secondary`) |
-| `primary` (+ `primary-muted`) | lagoon teal `#0B6E69` | Actions, active nav, focus rings (`accent` follows primary) |
-| `signal` (+ `signal-muted`) | marigold `#C7791A` | **Only** for showing data change: pipeline rail, row/column deltas, new-column highlights, previews |
+| `primary` (+ `primary-muted`) | blue `#2156D9` | Buttons, selection, focus rings, links (`accent` follows primary) |
+| `signal` (+ `signal-muted`) | amber | **Only** for showing data change: row/column deltas, new-column highlights, duplicate-row warnings |
 | `success` / `warning` / `danger` / `info` (+ `-muted`) | | Status |
 
 ### Component utility classes (`@utility` in `src/styles/globals.css`)
 
 | Class | Purpose |
 |---|---|
-| `.card`, `.card-hover` | Surface container (rounded-xl, border) |
-| `.btn` + `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-danger`, `.btn-sm` | Buttons (36px, 32px small) |
+| `.card`, `.card-hover` | Surface container (rounded-lg, border) |
+| `.btn` + `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-danger`, `.btn-sm` | Buttons (32px, 28px small, rounded-md) |
 | `.btn-icon` | Square icon button (always give it an `aria-label`) |
 | `.input` | Inputs and selects |
 | `.field-label`, `.field-hint` | Form labels and help text |
@@ -298,15 +304,18 @@ Built on TailwindCSS 4 with a token layer. Light theme by default; `[data-theme=
 
 ### Typography
 
-- **Page titles (`h1`):** Bricolage Grotesque — display face, used for h1 only
-- **Interface:** Hanken Grotesk
-- **Data / code:** JetBrains Mono
+- **Interface:** IBM Plex Sans (base 14px, dense UI 13px); headings are plain semibold, no display face
+- **Data / code:** IBM Plex Mono
 
 ### Conventions
 
 - Dates display as DD/MM/YYYY via `lib/format.ts`.
 - No hard-coded colours (`bg-white`, hex) — use tokens so dark mode keeps working.
 - `prefers-reduced-motion` disables animations globally.
+- No uppercase/letter-spaced eyebrow labels, decorative pills, gradients or large radii; prefer
+  toolbars, panes, tables and 1px separators.
+- Sidebar collapses to an icon rail (button or Ctrl/Cmd+B), stored in `localStorage`
+  (`kadence.sidebar.collapsed`).
 
 ### Custom animations
 
@@ -349,6 +358,20 @@ npm run preview
 ---
 
 ## Changelog
+
+### 2026-10-18 — Workbench redesign: collapsible sidebar, Snowsight-style Data sources, Power Query-style Studio
+
+- Design language replaced: IBM Plex Sans/Mono, neutral surfaces, blue for interaction, amber only
+  for data change, 32px controls, no eyebrow labels/pills/gradients
+- Sidebar collapses to an icon rail (Ctrl/Cmd+B) and remembers the choice
+- Data sources: list + detail split view (Preview / Columns / Versions / Lineage) and a two-step
+  Add data dialog
+- Pipeline Studio: ribbon, datasets pane, formula bar, column quality profiles, applied steps,
+  step dialogs; Merge dialog selects keys by clicking columns, counts matched rows exactly and
+  warns when a non-unique key duplicates rows
+- Join keys are only suggested when both datasets share a column name (no more unrelated guesses
+  such as RowNumber = Rooms); check in `tests/joinKeys.test.ts`
+- Query Studio rebuilt as a conversation with a composer; Home is a dense start page
 
 ### 2026-10-18 — Design refresh, Data sources and Pipeline Studio rebuild, two-source joins
 

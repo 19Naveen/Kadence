@@ -2,29 +2,24 @@ import { features } from "../landingContent";
 
 export function FeaturesSection() {
   return (
-    <section id="features" className="scroll-mt-20 px-6 py-24">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-16 space-y-4 text-center">
-          <p className="section-label text-primary">What you can do</p>
-          <h2 className="text-4xl font-semibold tracking-tight sm:text-5xl">From raw files to answers</h2>
-          <p className="mx-auto max-w-2xl text-lg text-text-secondary">
+    <section id="features" className="scroll-mt-16 border-t border-border px-6 py-20">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-10 max-w-2xl">
+          <h2 className="text-2xl font-semibold sm:text-3xl">From raw files to answers</h2>
+          <p className="mt-2 text-base text-text-secondary">
             Import, shape and query your data in one workspace, with every version kept.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
           {features.map(({ Icon, title, description, soon }) => (
-            <div key={title} className="card card-hover space-y-4 p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-primary-muted text-primary">
-                  <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
-                </div>
-                {soon && <span className="badge bg-signal-muted text-signal">Coming soon</span>}
+            <div key={title} className="bg-surface p-6">
+              <div className="mb-3 flex items-center gap-2">
+                <Icon size={16} className="text-text-tertiary" aria-hidden="true" />
+                <h3 className="text-[15px] font-semibold">{title}</h3>
+                {soon && <span className="badge ml-auto bg-surface-2 text-text-secondary">Coming soon</span>}
               </div>
-              <div>
-                <h3 className="mb-1.5 text-base font-semibold tracking-tight">{title}</h3>
-                <p className="text-sm leading-relaxed text-text-secondary">{description}</p>
-              </div>
+              <p className="text-sm leading-relaxed text-text-secondary">{description}</p>
             </div>
           ))}
         </div>
