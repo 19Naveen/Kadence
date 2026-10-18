@@ -58,6 +58,8 @@ def test_combine_job_creates_new_dataset_and_pending_job(monkeypatch):
     assert created["job"]["staging_path"] == "ws/ds/raw/v1/data.parquet"
     assert created["job"]["source_type"] == SourceType.PARQUET
     assert created["job"]["status"] == JobStatus.PENDING
+    # The base is recorded so lineage can show it and the model can be rebuilt.
+    assert created["job"]["source_config"]["_primary_dataset_id"] == str(primary_id)
 
 
 def test_combine_job_rejects_unauthorized_primary_dataset(monkeypatch):

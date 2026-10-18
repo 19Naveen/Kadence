@@ -159,6 +159,22 @@ def get_first_success_job(db: Session, dataset_id: uuid.UUID) -> IngestionJob | 
     )
 
 
+def list_success_jobs(db: Session, dataset_ids: list[uuid.UUID]) -> list[IngestionJob]:
+    """Every SUCCESS job for the given datasets, oldest first, in one query — the
+    batch form of get_first_success_job / get_latest_success_job for the lineage graph."""
+    if not dataset_ids:
+        return []
+    return (
+        db.query(IngestionJob)
+        .filter(
+            IngestionJob.dataset_id.in_(dataset_ids),
+            IngestionJob.status == JobStatus.SUCCESS,
+        )
+        .order_by(IngestionJob.created_at.asc())
+        .all()
+    )
+
+
 def get_latest_pending_job(db: Session, dataset_id: uuid.UUID) -> IngestionJob | None:
     """Most recent PENDING job for a dataset (used to surface the incoming schema diff)."""
     return (
@@ -189,6 +205,22 @@ def get_latest_version(db: Session, dataset_id: uuid.UUID) -> DatasetVersion | N
         .order_by(DatasetVersion.version.desc())
         .first()
     )
+
+
+def get_latest_versions(
+    db: Session, dataset_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, DatasetVersion]:
+    """{dataset_id: latest version} for the given datasets in one query; datasets
+    without a version are absent."""
+    if not dataset_ids:
+        return {}
+    versions = (
+        db.query(DatasetVersion)
+        .filter(DatasetVersion.dataset_id.in_(dataset_ids))
+        .order_by(DatasetVersion.version.asc())
+        .all()
+    )
+    return {v.dataset_id: v for v in versions}  # ascending, so the last one wins
 
 
 def list_versions(db: Session, dataset_id: uuid.UUID) -> list[DatasetVersion]:

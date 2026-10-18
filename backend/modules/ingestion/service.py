@@ -7,6 +7,10 @@ from modules.ingestion.enums import JobStatus, SourceType, TransformType
 from modules.ingestion.schemas import (
     CombineDatasetsRequest,
     CreateIngestionJobRequest,
+    LineageGraphEdge,
+    LineageGraphModel,
+    LineageGraphNode,
+    LineageGraphResponse,
     ResolveSchemaMappingRequest,
 )
 from modules.ingestion.tasks import run_ingestion_pipeline
@@ -155,7 +159,12 @@ def create_combine_job(db: Session, payload: CombineDatasetsRequest, owner_id: s
             "source_type": SourceType.PARQUET,
             # mode="json": join steps carry a uuid.UUID dataset_id — plain model_dump()
             # leaves it as a UUID object, which the JSONB column's json.dumps can't serialize.
-            "source_config": {"_transforms": [s.model_dump(mode="json") for s in payload.transforms]},
+            # _primary_dataset_id records the base so lineage can show it and the
+            # model can be rebuilt later (`_` keys are pipeline state, ignored by connectors).
+            "source_config": {
+                "_transforms": [s.model_dump(mode="json") for s in payload.transforms],
+                "_primary_dataset_id": str(primary.id),
+            },
             "staging_path": primary_latest.storage_path,
             "staging_metadata": {
                 "file_size": primary_latest.file_size,
@@ -165,6 +174,129 @@ def create_combine_job(db: Session, payload: CombineDatasetsRequest, owner_id: s
             },
         },
     )
+
+
+def job_recipe(job) -> tuple[str | None, list[dict]]:
+    """(base dataset id as recorded, transform steps) from a job's source_config.
+    The base is None for imports and for datasets combined before it was recorded."""
+    config = (job.source_config or {}) if job else {}
+    return config.get("_primary_dataset_id"), config.get("_transforms") or []
+
+
+def is_model(base_id: str | None, steps: list[dict]) -> bool:
+    """A model is built from other datasets: a recorded base or any join / append step."""
+    return bool(base_id) or any((s or {}).get("type") in ("join", "append") for s in steps)
+
+
+def build_lineage_graph(db: Session, workspace_id: uuid.UUID) -> LineageGraphResponse:
+    """Whole-workspace lineage DAG for the Models screen: one node per dataset with at
+    least one version, one edge per base / join / append input that is itself a node
+    (deleted or other-workspace inputs are skipped; so are self-edges). Ownership of
+    the workspace must be checked by the caller."""
+    datasets = repo.list_datasets(db, workspace_id)
+    ids = [ds.id for ds in datasets]
+    latest_versions = repo.get_latest_versions(db, ids)
+    first_jobs: dict = {}
+    latest_jobs: dict = {}
+    for job in repo.list_success_jobs(db, ids):  # oldest first
+        first_jobs.setdefault(job.dataset_id, job)
+        latest_jobs[job.dataset_id] = job
+
+    datasets = [ds for ds in datasets if ds.id in latest_versions]
+    node_ids = {str(ds.id) for ds in datasets}
+    nodes: list[LineageGraphNode] = []
+    edges: list[LineageGraphEdge] = []
+    for ds in datasets:
+        version = latest_versions[ds.id]
+        first_job, job = first_jobs.get(ds.id), latest_jobs.get(ds.id)
+        base_id, steps = job_recipe(job)
+        target = str(ds.id)
+
+        model = None
+        if is_model(base_id, steps):
+            visible_base = base_id if base_id in node_ids else None
+            model = LineageGraphModel(
+                base_dataset_id=visible_base,
+                steps=steps,
+                built_at=job.updated_at or job.created_at,
+            )
+            if visible_base and visible_base != target:
+                edges.append(LineageGraphEdge(source=visible_base, target=target, role="base"))
+            for step in steps:
+                kind = (step or {}).get("type")
+                src = str(step.get("dataset_id")) if kind in ("join", "append") else None
+                if src not in node_ids or src == target:
+                    continue
+                edges.append(LineageGraphEdge(
+                    source=src, target=target, role=kind,
+                    how=step.get("how", "inner") if kind == "join" else None,
+                    left_on=step.get("left_on") if kind == "join" else None,
+                    right_on=step.get("right_on") if kind == "join" else None,
+                ))
+
+        # Table name only — never credentials (see get_dataset_lineage).
+        first_config = (first_job.source_config or {}) if first_job else {}
+        nodes.append(LineageGraphNode(
+            id=ds.id,
+            name=ds.name,
+            source_type=ds.source_type,
+            kind="model" if model else "source",
+            row_count=version.row_count,
+            column_count=version.column_count,
+            version=version.version,
+            updated_at=version.created_at,
+            origin_detail=first_config.get("table"),
+            model=model,
+        ))
+    return LineageGraphResponse(nodes=nodes, edges=edges)
+
+
+def create_rebuild_job(
+    db: Session, dataset_id: uuid.UUID, workspace_id: uuid.UUID, owner_id: str
+) -> IngestionJob:
+    """Re-run a model's recorded recipe (base + steps from its latest successful job)
+    on the latest versions of its inputs, saved as a new version of the same dataset.
+    Goes through create_combine_job, so every referenced dataset is ownership-checked.
+    The caller dispatches the returned job."""
+    from pydantic import ValidationError
+
+    from modules.ingestion.auth import assert_dataset_owned, assert_workspace_owned
+
+    def bad_request(detail: str) -> HTTPException:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    assert_workspace_owned(db, workspace_id, owner_id)
+    dataset = assert_dataset_owned(db, dataset_id, owner_id)
+    if dataset.workspace_id != workspace_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+
+    base_id, steps = job_recipe(repo.get_latest_success_job(db, dataset_id))
+    if not is_model(base_id, steps):
+        raise bad_request("This dataset is not a model, so there is nothing to rebuild")
+    if not base_id:
+        raise bad_request(
+            "This dataset was combined before its base was recorded; open it in "
+            "Pipeline Studio and save it again to enable rebuilds"
+        )
+    if base_id == str(dataset_id):
+        # Re-applying the steps to the current version would apply them twice.
+        raise bad_request(
+            "This dataset's steps were applied on top of its own previous version, "
+            "so it can't be rebuilt from its inputs"
+        )
+    if not repo.get_dataset(db, uuid.UUID(base_id)):
+        raise bad_request("This model's base dataset no longer exists, so it can't be rebuilt")
+
+    try:
+        payload = CombineDatasetsRequest(
+            workspace_id=workspace_id,
+            primary_dataset_id=base_id,
+            transforms=steps,
+            target_dataset_id=dataset_id,
+        )
+    except ValidationError:
+        raise bad_request("This model's saved steps are no longer valid; open it in Pipeline Studio and save it again")
+    return create_combine_job(db, payload, owner_id)
 
 
 def resolve_schema_mapping(

@@ -165,8 +165,8 @@ class TransformPreviewResponse(BaseModel):
 
 
 class LineageSource(BaseModel):
-    """One immediate join / append edge feeding into a dataset's latest version
-    (append edges: how="append", empty left_on / right_on)."""
+    """One immediate base / join / append edge feeding into a dataset's latest version
+    (base and append edges: how="base" / "append", empty left_on / right_on)."""
     dataset_id: uuid.UUID
     dataset_name: str
     how: str
@@ -185,6 +185,45 @@ class DatasetLineageResponse(BaseModel):
     origin_detail: str | None = None
     version: int | None
     sources: list[LineageSource]
+
+
+class LineageGraphModel(BaseModel):
+    """How a model dataset is built: its recorded base (None if never recorded, or
+    deleted / outside the workspace) and the transform steps exactly as stored."""
+    base_dataset_id: uuid.UUID | None = None
+    steps: list[dict]
+    built_at: datetime
+
+
+class LineageGraphNode(BaseModel):
+    """One dataset with at least one version. kind="model" when its latest successful
+    job recorded a base or has a join / append step, else "source"."""
+    id: uuid.UUID
+    name: str
+    source_type: str
+    kind: Literal["source", "model"]
+    row_count: int
+    column_count: int
+    version: int
+    updated_at: datetime
+    origin_detail: str | None = None
+    model: LineageGraphModel | None = None
+
+
+class LineageGraphEdge(BaseModel):
+    """An input feeding a model. how / left_on / right_on are set for role="join" only."""
+    source: uuid.UUID
+    target: uuid.UUID
+    role: Literal["base", "join", "append"]
+    how: str | None = None
+    left_on: str | None = None
+    right_on: str | None = None
+
+
+class LineageGraphResponse(BaseModel):
+    """Whole-workspace lineage DAG for the Models screen."""
+    nodes: list[LineageGraphNode]
+    edges: list[LineageGraphEdge]
 
 
 class DatasetVersionResponse(BaseModel):

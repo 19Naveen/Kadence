@@ -288,13 +288,15 @@ PENDING (awaiting schema resolution) → user calls /resolve → RUNNING → SUC
 | GET | `/transforms/ops` | Yes | Canonical transform op catalog (`OPS_CATALOG`). Field kinds: `column`, `columns` (multi-select, JSON array), `column_right`, `dataset`, `select` (with optional `option_labels` code→label map), `text`, `number` |
 | POST | `/transforms/preview` | Yes | Apply a transform plan to a sampled table and return the result. Auth-gated (`db` + `get_current_user`) so `join` / `append` steps can resolve and authorize their other dataset via `resolve_join_sources` — unauthorized or missing dataset → 404 `Dataset not found` (no 403, no existence leak). Right side capped at 100k rows for preview only. |
 | POST | `/jobs/{job_id}/commit` | Yes | Persist the transform plan and dispatch `run_ingestion_pipeline` |
-| POST | `/jobs/combine` | Yes | Ad-hoc combine of one or more already-imported datasets — no fresh import required. Builds an `IngestionJob` whose `staging_path` is the primary dataset's latest version file instead of an upload, then reuses `run_ingestion_pipeline` unmodified. Result is saved as a new dataset (`new_dataset_name`) or a new version of an existing one (`target_dataset_id`) — exactly one must be provided. |
+| POST | `/jobs/combine` | Yes | Ad-hoc combine of one or more already-imported datasets — no fresh import required. Builds an `IngestionJob` whose `staging_path` is the primary dataset's latest version file instead of an upload, then reuses `run_ingestion_pipeline` unmodified. Result is saved as a new dataset (`new_dataset_name`) or a new version of an existing one (`target_dataset_id`) — exactly one must be provided. The job's `source_config` records `_transforms` and `_primary_dataset_id` (the base), which lineage and rebuilds read. |
+| POST | `/datasets/{dataset_id}/rebuild?workspace_id=` | Yes | 202 → `IngestionJobResponse`. Re-runs a model's recipe (`_primary_dataset_id` + `_transforms` from its latest successful job) on the latest versions of its inputs, saved as a new version of the same dataset via `create_combine_job` (same ownership checks + Celery dispatch as `/jobs/combine`). 400 when the dataset is not a model, its base was never recorded (combined before this field existed), its base is itself, its base was deleted, or its saved steps no longer validate. |
 | POST | `/jobs/{job_id}/resolve` | Yes | Resolve a schema diff: submit mapping rules **or** `accept_new_schema`, then re-dispatch |
 | GET | `/datasets` | Yes | List datasets in a workspace (with version count + latest stats) |
 | DELETE | `/datasets/{dataset_id}` | Yes | Delete dataset + versions + MinIO objects |
 | GET | `/datasets/{dataset_id}/versions` | Yes | List all versions |
 | GET | `/datasets/{dataset_id}/schema` | Yes | Get latest schema and diff |
-| GET | `/datasets/{dataset_id}/lineage` | Yes | Where this dataset originally came from (`source_type` + `origin_detail`, e.g. a DB table name from `repo.get_first_success_job`) plus single-hop join / append sources (append edges: `how="append"`, empty `left_on`/`right_on`) feeding its latest version (from `repo.get_latest_success_job`'s transform plan). No recursion server-side — the frontend calls this again per source `dataset_id` to walk further back and render a multi-hop lineage graph. Never exposes DB credentials, only the table name. |
+| GET | `/datasets/{dataset_id}/lineage` | Yes | Where this dataset originally came from (`source_type` + `origin_detail`, e.g. a DB table name from `repo.get_first_success_job`) plus single-hop sources: the recorded base first (`how="base"`, empty `left_on`/`right_on`; omitted when the base is the dataset itself or deleted), then join / append sources (append edges: `how="append"`, empty `left_on`/`right_on`) feeding its latest version (from `repo.get_latest_success_job`'s transform plan). No recursion server-side — the frontend calls this again per source `dataset_id` to walk further back and render a multi-hop lineage graph. Never exposes DB credentials, only the table name. |
+| GET | `/lineage-graph?workspace_id=` | Yes | `LineageGraphResponse` for the Models screen: one node per dataset with at least one version (`kind` = `model` when its latest successful job recorded a base or has a join / append step, else `source`; `model` = `{base_dataset_id, steps, built_at}`; `origin_detail` = DB table name only), and `edges` (`role` = `base` / `join` / `append`; `how` / `left_on` / `right_on` for joins only). Edges only between nodes in the workspace; self-edges skipped. Batched via `repo.get_latest_versions` + `repo.list_success_jobs`. |
 
 #### Schema Inference
 
@@ -571,6 +573,17 @@ celery -A celery_app worker --loglevel=info
 ---
 
 ## Changelog
+
+### 2026-10-18 — Models screen: recorded base, lineage graph, rebuild
+
+- `create_combine_job` now records the base in `source_config["_primary_dataset_id"]`, so
+  lineage shows where a combined dataset started (previously only joined-in datasets showed)
+- `GET /datasets/{id}/lineage` prepends the base as a `how="base"` source
+- New `GET /lineage-graph?workspace_id=`: the whole workspace's lineage DAG in one request
+- New `POST /datasets/{id}/rebuild?workspace_id=`: re-runs a model's recipe on the latest
+  inputs as a new version, through the same path as `/jobs/combine`. Datasets combined before
+  this change have no recorded base and must be re-saved from Pipeline Studio first
+- New repository helpers `get_latest_versions`, `list_success_jobs` (batched, no N+1)
 
 ### 2026-10-18 — Transform ops: filter fix, sort, select, calc, group, append
 

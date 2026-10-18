@@ -34,6 +34,7 @@ from modules.ingestion.schemas import (
     DatasetResponse,
     DatasetVersionResponse,
     IngestionJobResponse,
+    LineageGraphResponse,
     LineageSource,
     ResolveSchemaMappingRequest,
     SchemaDiffResponse,
@@ -42,8 +43,11 @@ from modules.ingestion.schemas import (
     TransformPreviewResponse,
 )
 from modules.ingestion.service import (
+    build_lineage_graph,
     create_combine_job,
     create_ingestion_job,
+    create_rebuild_job,
+    job_recipe,
     resolve_join_sources,
     resolve_schema_mapping,
 )
@@ -458,8 +462,8 @@ async def get_dataset_lineage(
     user: dict = Depends(get_current_user),
 ):
     """Where this dataset originally came from (source_type + origin_detail, e.g. a DB
-    table name) plus any join / append steps in the job that produced its latest
-    version. Only the immediate sources — the frontend calls this again per source dataset_id
+    table name) plus the base (how="base", for combined datasets that recorded one) and
+    any join / append steps in the job that produced its latest version. Only the immediate sources — the frontend calls this again per source dataset_id
     to walk further back and render a multi-hop lineage graph."""
     dataset = assert_dataset_owned(db, dataset_id, owner_id=user["sub"])
     latest = repo.get_latest_version(db, dataset_id)
@@ -473,8 +477,14 @@ async def get_dataset_lineage(
     )
 
     sources: list[LineageSource] = []
-    transforms = (job.source_config or {}).get("_transforms") if job else None
-    for step in transforms or []:
+    base_id, transforms = job_recipe(job)
+    # The dataset a combine started from. Saved-over-itself (base == self) is not a source.
+    base = repo.get_dataset(db, uuid.UUID(base_id)) if base_id and base_id != str(dataset_id) else None
+    if base:
+        sources.append(LineageSource(
+            dataset_id=base.id, dataset_name=base.name, how="base", left_on="", right_on="",
+        ))
+    for step in transforms:
         if (step or {}).get("type") not in ("join", "append"):
             continue
         src_id = step.get("dataset_id")
@@ -499,6 +509,36 @@ async def get_dataset_lineage(
         version=latest.version if latest else None,
         sources=sources,
     )
+
+
+@router.get("/lineage-graph", response_model=LineageGraphResponse)
+async def get_lineage_graph(
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """The whole workspace's lineage as one DAG (nodes = versioned datasets, edges =
+    base / join / append inputs), so the Models screen needs a single request."""
+    assert_workspace_owned(db, workspace_id, owner_id=user["sub"])
+    return build_lineage_graph(db, workspace_id)
+
+
+@router.post(
+    "/datasets/{dataset_id}/rebuild",
+    response_model=IngestionJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def rebuild_dataset(
+    dataset_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Re-run a model's recorded recipe on the latest versions of its inputs and save
+    the result as a new version of the same dataset (same path as POST /jobs/combine)."""
+    job = create_rebuild_job(db, dataset_id, workspace_id, owner_id=user["sub"])
+    run_ingestion_pipeline.delay(str(job.id))
+    return _job_to_response(job)
 
 
 # ── Get latest schema / diff ──────────────────────────────────────────────────
