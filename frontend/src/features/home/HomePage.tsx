@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, ChartColumn, Database, FileSpreadsheet, MessageSquareText, Upload, Workflow } from "lucide-react";
+import { ChartColumn, ChevronRight, Database, FileSpreadsheet, SquareTerminal, Upload, Workflow } from "lucide-react";
 import { PageHeader } from "../../components/shared/PageHeader";
 import { useAuthContext } from "../../lib/context/AuthContext";
 import { useWorkspaceContext } from "../../lib/context/WorkspaceContext";
@@ -8,11 +8,21 @@ import { isFileSource } from "../../lib/api/ingest";
 import { formatCount, formatDate } from "../../lib/format";
 
 const ACTIONS = [
-  { to: "/app/data-import", Icon: Upload, title: "Bring in data", body: "Upload a file or read a database table." },
+  { to: "/app/data-import", Icon: Upload, title: "Bring in data", body: "Upload a CSV, Excel or Parquet file, or read a database table." },
   { to: "/app/data-transform", Icon: Workflow, title: "Shape a dataset", body: "Clean, filter, join and summarize with a live preview." },
-  { to: "/app/query-studio", Icon: MessageSquareText, title: "Ask with SQL", body: "Run read-only queries against the latest version." },
-  { to: "/app/eda-dashboards", Icon: ChartColumn, title: "Chart it", body: "Build quick charts from any column." },
+  { to: "/app/query-studio", Icon: SquareTerminal, title: "Query with SQL", body: "Run read-only queries against the latest version." },
+  { to: "/app/eda-dashboards", Icon: ChartColumn, title: "Chart a column", body: "Build quick charts from any dataset." },
 ];
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  csv: "CSV", xlsx: "Excel", parquet: "Parquet", postgres: "PostgreSQL", mysql: "MySQL", snowflake: "Snowflake", mssql: "SQL Server",
+};
+const sourceLabel = (s: string) => SOURCE_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 
 export function HomePage() {
   const { user } = useAuthContext();
@@ -21,88 +31,111 @@ export function HomePage() {
 
   const totalRows = datasets.reduce((n, d) => n + (d.latest_row_count ?? 0), 0);
   const totalVersions = datasets.reduce((n, d) => n + d.version_count, 0);
-  const recent = [...datasets].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  const recent = [...datasets].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8);
+  const empty = !loading && datasets.length === 0;
 
   return (
     <div>
       <PageHeader
-        eyebrow={activeWorkspace?.name}
-        title={user ? `Welcome back, ${user.username}` : "Welcome back"}
-        subtitle="Pick up where you left off, or bring in something new."
-        actions={<Link to="/app/data-import" className="btn btn-primary"><Upload size={15} /> Upload files</Link>}
+        title={user ? `${greeting()}, ${user.username}` : greeting()}
+        subtitle={activeWorkspace?.name}
+        actions={
+          <>
+            <Link to="/app/data-transform" className="btn btn-secondary">Open Pipeline Studio</Link>
+            <Link to="/app/data-import" className="btn btn-primary"><Upload size={14} /> Add data</Link>
+          </>
+        }
       />
 
-      <dl className="mb-8 grid grid-cols-3 overflow-hidden rounded-xl border border-border bg-surface">
-        {[
-          ["Datasets", loading ? "…" : formatCount(datasets.length)],
-          ["Rows across latest versions", loading ? "…" : formatCount(totalRows)],
-          ["Versions saved", loading ? "…" : formatCount(totalVersions)],
-        ].map(([label, value], i) => (
-          <div key={label} className={i ? "border-l border-border px-5 py-4" : "px-5 py-4"}>
-            <dt className="text-xs text-text-tertiary">{label}</dt>
-            <dd className="tabular mt-1 font-mono text-2xl font-semibold">{value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="grid gap-8 lg:grid-cols-[1.5fr_1fr]">
-        <section aria-labelledby="recent-heading">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="recent-heading" className="text-base font-semibold">Recent datasets</h2>
-            {datasets.length > 0 && <Link to="/app/data-import" className="text-sm font-semibold text-primary hover:underline">View all</Link>}
-          </div>
-          {!loading && datasets.length === 0 ? (
-            <div className="card p-8 text-center">
-              <p className="font-semibold">No datasets in {activeWorkspace?.name ?? "this workspace"} yet</p>
-              <p className="mx-auto mt-1 max-w-sm text-sm text-text-secondary">Upload a CSV, Excel or Parquet file, or connect a database. You'll review it before it's saved.</p>
-              <Link to="/app/data-import" className="btn btn-primary mt-4"><Upload size={15} /> Bring in data</Link>
-            </div>
-          ) : (
-            <ul className="card divide-y divide-border-subtle p-0">
-              {(loading ? [] : recent).map((d) => (
-                <li key={d.id} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-text-secondary">
-                    {isFileSource(d.source_type) ? <FileSpreadsheet size={16} /> : <Database size={16} />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{d.name}</span>
-                    <span className="block text-xs text-text-tertiary">
-                      {formatCount(d.latest_row_count)} rows · v{d.version_count} · {formatDate(d.created_at)}
-                    </span>
-                  </span>
-                  <Link
-                    to="/app/data-transform"
-                    state={{ mode: "shape", datasetId: d.id }}
-                    className="btn btn-ghost btn-sm"
-                    aria-label={`Shape ${d.name} in Pipeline Studio`}
-                  >
-                    <Workflow size={14} /> Shape
-                  </Link>
-                </li>
-              ))}
-              {loading && <li className="px-4 py-6"><div className="h-4 w-1/2 animate-pulse rounded bg-surface-2" /></li>}
-            </ul>
+      {!empty && (
+        <p className="-mt-2 mb-6 text-[13px] text-text-tertiary">
+          {loading ? "Loading…" : (
+            <>
+              <span className="tabular font-mono text-text-secondary">{formatCount(datasets.length)}</span> {datasets.length === 1 ? "dataset" : "datasets"}
+              {" · "}<span className="tabular font-mono text-text-secondary">{formatCount(totalRows)}</span> {totalRows === 1 ? "row" : "rows"}
+              {" · "}<span className="tabular font-mono text-text-secondary">{formatCount(totalVersions)}</span> {totalVersions === 1 ? "version" : "versions"}
+            </>
           )}
-        </section>
+        </p>
+      )}
 
-        <section aria-labelledby="actions-heading">
-          <h2 id="actions-heading" className="mb-3 text-base font-semibold">What would you like to do?</h2>
-          <ul className="space-y-2">
-            {ACTIONS.map(({ to, Icon, title, body }) => (
-              <li key={to}>
-                <Link to={to} className="card card-hover group flex items-center gap-3 px-4 py-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-muted text-primary"><Icon size={17} /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">{title}</span>
-                    <span className="block text-xs text-text-secondary">{body}</span>
-                  </span>
-                  <ArrowRight size={16} className="text-text-tertiary transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              </li>
-            ))}
-          </ul>
+      {empty ? (
+        <section className="rounded-lg border border-border bg-surface px-6 py-10 text-center">
+          <h2 className="text-base font-semibold">No datasets in {activeWorkspace?.name ?? "this workspace"} yet</h2>
+          <p className="mx-auto mt-1 max-w-md text-[13px] text-text-secondary">
+            Upload a CSV, Excel or Parquet file, or read a table from a database. You review the columns before anything is saved.
+          </p>
+          <Link to="/app/data-import" className="btn btn-primary mt-4"><Upload size={14} /> Add data</Link>
         </section>
-      </div>
+      ) : (
+        <section aria-labelledby="recent-heading" className="mb-8">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 id="recent-heading" className="text-sm font-semibold">Recent datasets</h2>
+            <Link to="/app/data-import" className="text-[13px] text-primary hover:underline">View all</Link>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-text-tertiary">
+                  <th scope="col" className="px-4 py-2 font-medium">Name</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Source</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Rows</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Versions</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Created</th>
+                  <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan={6} className="px-4 py-4"><div className="h-3.5 w-1/3 animate-pulse rounded bg-surface-2" /></td></tr>
+                )}
+                {recent.map((d) => (
+                  <tr key={d.id} className="table-row last:border-0">
+                    <td className="max-w-72 px-4 py-2">
+                      <span className="flex items-center gap-2">
+                        {isFileSource(d.source_type)
+                          ? <FileSpreadsheet size={14} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+                          : <Database size={14} className="shrink-0 text-text-tertiary" aria-hidden="true" />}
+                        <span className="truncate font-medium">{d.name}</span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-text-secondary">{sourceLabel(d.source_type)}</td>
+                    <td className="tabular px-3 py-2 text-right font-mono text-[12.5px]">{formatCount(d.latest_row_count)}</td>
+                    <td className="tabular px-3 py-2 text-right font-mono text-[12.5px]">{d.version_count}</td>
+                    <td className="tabular whitespace-nowrap px-3 py-2 text-text-secondary">{formatDate(d.created_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                      <Link to="/app/data-transform" state={{ mode: "shape", datasetId: d.id }} className="btn btn-ghost btn-sm" aria-label={`Shape ${d.name} in Pipeline Studio`}>
+                        Shape
+                      </Link>
+                      <Link to="/app/query-studio" className="btn btn-ghost btn-sm" aria-label={`Query ${d.name} in Query Studio`}>
+                        Query
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <section aria-labelledby="start-heading" className={empty ? "mt-8" : undefined}>
+        <h2 id="start-heading" className="mb-2 text-sm font-semibold">Start something</h2>
+        <ul className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border bg-surface">
+          {ACTIONS.map(({ to, Icon, title, body }) => (
+            <li key={to}>
+              <Link to={to} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2 focus-visible:-outline-offset-2">
+                <Icon size={16} className="shrink-0 text-text-tertiary group-hover:text-text-secondary" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium">{title}</span>
+                  <span className="block truncate text-xs text-text-tertiary">{body}</span>
+                </span>
+                <ChevronRight size={15} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
