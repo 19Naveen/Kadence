@@ -28,3 +28,11 @@ dist/
 .venv/
 __pycache__/
 .pytest_cache/
+
+# Claude Design sync: staged scripts, build output, machine state
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+frontend/.design-system/

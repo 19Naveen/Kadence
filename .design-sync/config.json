@@ -1,0 +1,34 @@
+{
+  "shape": "package",
+  "readmeHeader": ".design-sync/conventions.md",
+  "pkg": "kadence",
+  "globalName": "Kadence",
+  "entry": "frontend/src/design-system/index.ts",
+  "buildCmd": "node frontend/scripts/build-ds-css.mjs",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.app.json",
+  "cssEntry": ".design-system/kadence.css",
+  "extraEntries": ["lucide-react"],
+  "componentSrcMap": {
+    "Dialog": "src/components/shared/Dialog.tsx",
+    "PageHeader": "src/components/shared/PageHeader.tsx",
+    "PreviewNotice": "src/components/shared/PreviewNotice.tsx",
+    "BrandMark": "src/components/shared/BrandMark.tsx",
+    "PageLoading": "src/components/shared/PageLoading.tsx",
+    "PasswordField": "src/components/shared/AuthCardLayout.tsx"
+  },
+  "dtsPropsFor": {
+    "Dialog": "/** Controlled: render with open={true} and close via onClose. */ open: boolean; onClose: () => void; title: string; description?: React.ReactNode; children: React.ReactNode; /** Buttons, right-aligned in a footer bar. */ footer?: React.ReactNode; /** \"center\" for forms and confirmations, \"side\" for detail panels. */ variant?: \"center\" | \"side\"; size?: \"sm\" | \"md\" | \"lg\" | \"xl\"; /** Set false to block closing while work is in flight. */ dismissible?: boolean;",
+    "PageHeader": "title: string; subtitle?: React.ReactNode; /** Buttons shown on the right (stack under the title on small screens). */ actions?: React.ReactNode;",
+    "PreviewNotice": "/** Replaces the default beta note text. */ children?: React.ReactNode;",
+    "BrandMark": "size?: \"sm\" | \"md\" | \"lg\";",
+    "PageLoading": "/** Fill the viewport height instead of a padded block. */ fullScreen?: boolean;",
+    "PasswordField": "id: string; label: string; value: string; onChange: (value: string) => void; autoComplete: \"current-password\" | \"new-password\"; minLength?: number; hint?: string;"
+  },
+  "overrides": {
+    "Dialog": { "cardMode": "single", "viewport": "760x520" },
+    "PageHeader": { "cardMode": "column" },
+    "PreviewNotice": { "cardMode": "column" },
+    "PasswordField": { "cardMode": "column" }
+  }
+}
