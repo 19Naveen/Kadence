@@ -16,6 +16,8 @@ const OnboardingPage = page(() => import("./features/onboarding/OnboardingPage")
 const HomePage = page(() => import("./features/home/HomePage"), "HomePage");
 const DataImportPage = page(() => import("./features/data-import/DataImportPage"), "DataImportPage");
 const DataTransformPage = page(() => import("./features/data-transform/DataTransformPage"), "DataTransformPage");
+const ModelsPage = page(() => import("./features/models/ModelsPage"), "ModelsPage");
+const ModelBuilderPage = page(() => import("./features/models/ModelBuilderPage"), "ModelBuilderPage");
 const QueryStudioPage = page(() => import("./features/query-studio/QueryStudioPage"), "QueryStudioPage");
 const EDADashboardsPage = page(() => import("./features/eda-dashboards/EDADashboardsPage"), "EDADashboardsPage");
 const AutoMLLabPage = page(() => import("./features/automl-lab/AutoMLLabPage"), "AutoMLLabPage");
@@ -44,6 +46,8 @@ export function App() {
           <Route index element={<HomePage />} />
           <Route path="data-import" element={<DataImportPage />} />
           <Route path="data-transform" element={<DataTransformPage />} />
+          <Route path="models" element={<ModelsPage />} />
+          <Route path="models/new" element={<ModelBuilderPage />} />
           <Route path="query-studio" element={<QueryStudioPage />} />
           <Route path="eda-dashboards" element={<EDADashboardsPage />} />
           <Route path="automl-lab" element={<AutoMLLabPage />} />

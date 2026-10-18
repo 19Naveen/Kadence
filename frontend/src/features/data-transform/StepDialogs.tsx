@@ -5,7 +5,8 @@ import { cn } from "../../lib/cn";
 import { formatCount, plural } from "../../lib/format";
 import type { DatasetSummary } from "../../lib/hooks/useDatasets";
 import { suggestJoinKeys } from "../../lib/transforms/joinKeys";
-import { OPS, VALUELESS_FILTERS, previewStep, type Table, type TransformParams } from "../../lib/transforms/transforms";
+import { OPS, VALUELESS_FILTERS, type Table, type TransformParams } from "../../lib/transforms/transforms";
+import { duplicatesRows, previewJoin, type JoinStats } from "./joinPreview";
 import { DatasetSelect, FieldInput, ResultSummary, TypeGlyph, useOtherDataset } from "./StepFields";
 import { runStep, type Snapshot } from "./usePipeline";
 
@@ -121,15 +122,6 @@ const JOIN_KINDS: { how: string; label: string }[] = [
   { how: "full", label: "Full outer — all rows from both" },
 ];
 
-const ROW_TAG = "__kadence_row";
-
-interface MergeStats {
-  leftRows: number;
-  resultRows: number;
-  matchedLeft: number;   // distinct rows of this dataset that found a match
-  addedColumns: string[];
-}
-
 export function MergeDialog({ initial, input, editing, onClose, onSubmit, datasets, authHeaders }: BaseProps & {
   initial: TransformParams; datasets: DatasetSummary[]; authHeaders: () => Record<string, string>;
 }) {
@@ -138,7 +130,7 @@ export function MergeDialog({ initial, input, editing, onClose, onSubmit, datase
   const other = useOtherDataset(datasetId, 50);
   const leftKey = String(params.left_on ?? "");
   const rightKey = String(params.right_on ?? "");
-  const [stats, setStats] = useState<MergeStats | null>(null);
+  const [stats, setStats] = useState<JoinStats | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewing, setPreviewing] = useState(false);
 
@@ -159,17 +151,10 @@ export function MergeDialog({ initial, input, editing, onClose, onSubmit, datase
     if (!datasetId || !leftKey || !rightKey) return;
     let cancelled = false;
     setPreviewing(true);
-    const tagged: Table = { columns: [...input.columns, { name: ROW_TAG, type: "integer" }], rows: input.rows.map((r, i) => [...r, i]) };
     const t = setTimeout(async () => {
       try {
-        const out = await previewStep(tagged, "join", params, authHeaders);
-        if (cancelled) return;
-        const tagIdx = out.columns.findIndex((c) => c.name === ROW_TAG);
-        const leftNames = new Set(input.columns.map((c) => c.name));
-        const added = out.columns.map((c, i) => ({ name: c.name, i })).filter((c) => !leftNames.has(c.name) && c.name !== ROW_TAG);
-        const matched = new Set<unknown>();
-        for (const r of out.rows) if (r[tagIdx] !== null && added.some((c) => r[c.i] !== null && r[c.i] !== undefined)) matched.add(r[tagIdx]);
-        setStats({ leftRows: input.rows.length, resultRows: out.rows.length, matchedLeft: matched.size, addedColumns: added.map((c) => c.name) });
+        const { stats } = await previewJoin(input, params, authHeaders);
+        if (!cancelled) setStats(stats);
       } catch (e) {
         if (!cancelled) setPreviewError((e as Error).message);
       } finally {
@@ -184,7 +169,7 @@ export function MergeDialog({ initial, input, editing, onClose, onSubmit, datase
   const rightType = other.table?.columns.find((c) => c.name === rightKey)?.type;
   const numeric = (t?: string) => t === "integer" || t === "decimal";
   const typeMismatch = leftType && rightType && leftType !== rightType && !(numeric(leftType) && numeric(rightType));
-  const multiplies = stats && (params.how === "left" || params.how === "inner") && stats.resultRows > stats.leftRows;
+  const multiplies = stats && duplicatesRows(params.how, stats);
   const ready = !!(datasetId && leftKey && rightKey && stats && !previewError);
 
   return (

@@ -380,7 +380,7 @@ function EdgeList({ node }: { node: LineageNode }) {
             <span aria-hidden className={cn("absolute left-0 top-0 w-px bg-border", last ? "h-9" : "h-full")} />
             <span aria-hidden className="absolute left-0 top-9 h-px w-3.5 bg-border" />
             <p className="h-5 pt-1 font-mono text-[11.5px] leading-4 text-text-tertiary">
-              {edge.how === "append" ? "rows appended from" : `${edge.how} join on ${edge.left_on} = ${edge.right_on}`}
+              {edge.how === "base" ? "base table" : edge.how === "append" ? "rows appended from" : `${edge.how} join on ${edge.left_on} = ${edge.right_on}`}
             </p>
             {edge.node ? (
               <>

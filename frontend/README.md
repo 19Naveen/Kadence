@@ -90,6 +90,11 @@ frontend/
     │   │   ├── StepPalette.tsx    # Searchable step picker (Ctrl/Cmd+K, /)
     │   │   ├── usePipeline.ts     # Evaluates steps; snapshot per step (server preview for join/append)
     │   │   └── launch.ts          # Router state: import review vs shape (+ preset steps)
+    │   ├── models/                # dbt-style models: lineage graph + model builder
+    │   │   ├── ModelsPage.tsx     # Lineage graph, node detail (recipe, rebuild, preview)
+    │   │   ├── ModelBuilderPage.tsx # New model: base table + join clauses, live preview, diagram strip
+    │   │   ├── LineageGraph.tsx   # SVG graph renderer + legend
+    │   │   └── layout.ts          # Layered graph layout (tests/graphLayout.test.ts)
     │   ├── query-studio/
     │   │   └── QueryStudioPage.tsx
     │   ├── eda-dashboards/
@@ -114,7 +119,8 @@ frontend/
     │   │   ├── AppContext.tsx     # Datasets and dashboards state
     │   │   └── WorkspaceContext.tsx # Workspace and member state
     │   ├── api/
-    │   │   └── ingest.ts          # /data-ingest client: upload, DB job, commit, combine, waitForJob, lineage
+    │   │   ├── ingest.ts          # /data-ingest client: upload, DB job, commit, combine, waitForJob, lineage
+    │   │   └── models.ts          # Lineage graph + model rebuild client
     │   ├── transforms/
     │   │   ├── transforms.ts      # Op catalog (merged with GET /transforms/ops), local apply, previewStep
     │   │   └── joinKeys.ts        # suggestJoinKeys()
@@ -148,6 +154,8 @@ Public routes are open to all. `/signin` and `/signup` are wrapped in `<PublicOn
 | `/app` | `HomePage` | Yes | Real workspace counts, recent datasets, quick actions |
 | `/app/data-import` | `DataImportPage` (**Data sources**) | Yes | One library of all datasets; upload files (two files can be imported and opened joined), connect a database, details panel with versions + lineage, select two datasets → "Join these two" |
 | `/app/data-transform` | `DataTransformPage` (**Pipeline Studio**) | Yes | Router state `{mode:"import", jobId, …}` reviews a staged import ("Import dataset"); `{mode:"shape", datasetId, presetSteps?}` shapes an existing dataset and saves as a new version or a new dataset. Full-bleed route |
+| `/app/models` | `ModelsPage` (**Models**) | Yes | Workspace lineage graph; select a node for its recipe, Rebuild, preview. Accepts router state `{select, notice}`. Full-bleed route |
+| `/app/models/new` | `ModelBuilderPage` | Yes | Build a model: base table + join clauses (live match/duplicate checks on a 200-row sample), optional column selection; creates a dataset via `combine`. Accepts router state `{baseId}`. Full-bleed route |
 | `/app/query-studio` | `QueryStudioPage` | Yes | Read-only SQL on the latest version via DuckDB. Full-bleed route |
 | `/app/eda-dashboards` | `EDADashboardsPage` | Yes | Exploratory data analysis dashboards |
 | `/app/automl-lab` | `AutoMLLabPage` | Yes | AutoML pipeline configuration |
@@ -358,6 +366,12 @@ npm run preview
 ---
 
 ## Changelog
+
+### 2026-10-18 — Models: lineage graph and model builder
+
+- New `/app/models` (lineage graph, rebuild) and `/app/models/new` (join-clause model builder with live preview) routes; "Models" added to the sidebar Data group.
+- Join preview logic moved to `features/data-transform/joinPreview.ts`, shared by MergeDialog and the model builder.
+- Data sources lineage tab labels the base table edge ("base table") separately from joins and appends.
 
 ### 2026-10-18 — Workbench redesign: collapsible sidebar, Snowsight-style Data sources, Power Query-style Studio
 

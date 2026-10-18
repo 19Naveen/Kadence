@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode, typ
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   BrainCircuit, ChartColumn, Check, ChevronsUpDown, Database, FlaskConical, House, LoaderCircle, LogOut,
-  Menu, PanelLeftClose, PanelLeftOpen, Plus, Settings, SquareTerminal, Target, UserRound, Workflow, X,
+  Menu, Network, PanelLeftClose, PanelLeftOpen, Plus, Settings, SquareTerminal, Target, UserRound, Workflow, X,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { useAuthContext } from "../../lib/context/AuthContext";
@@ -17,6 +17,7 @@ const navGroups = [
     items: [
       { to: "/app/data-import", label: "Data sources", Icon: Database },
       { to: "/app/data-transform", label: "Pipeline Studio", Icon: Workflow },
+      { to: "/app/models", label: "Models", Icon: Network },
     ],
   },
   {
@@ -37,7 +38,7 @@ const navGroups = [
 ] as const;
 
 /** Routes that manage their own full-height layout (no page padding / max width). */
-const FULL_BLEED = ["/app/data-import", "/app/data-transform", "/app/query-studio"];
+const FULL_BLEED = ["/app/data-import", "/app/data-transform", "/app/query-studio", "/app/models"];
 const COLLAPSE_KEY = "kadence.sidebar.collapsed";
 
 function readCollapsed(): boolean {
