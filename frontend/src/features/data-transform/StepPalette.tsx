@@ -50,7 +50,7 @@ export function StepPalette({ open, onClose, onPick }: StepPaletteProps) {
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[12vh]" onKeyDown={onKey}>
       <div className="absolute inset-0 bg-text/35 animate-fade-in" onClick={onClose} aria-hidden="true" />
-      <div role="dialog" aria-modal="true" aria-label="Add a step" className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-surface shadow-soft-lg animate-scale-in">
+      <div role="dialog" aria-modal="true" aria-label="Add a step" className="relative w-full max-w-xl overflow-hidden rounded-lg border border-border bg-surface shadow-soft-lg animate-scale-in">
         <label className="flex items-center gap-3 border-b border-border px-4">
           <Search size={17} className="text-text-tertiary" />
           <span className="sr-only">Search steps</span>
